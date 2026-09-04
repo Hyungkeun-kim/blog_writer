@@ -123,25 +123,45 @@ export class BlogWriterWorkflow extends WorkflowEntrypoint<Env, WorkflowParams> 
           .bind(userId)
           .first<{ tone_style: string }>()
 
-        let styleGuide = "1. 아이들의 감정/성격 추론 배제\n2. '아이1, 아이2' 등 익명 라벨 사용\n3. 관찰 가능한 행동 위주의 따뜻하고 자연스러운 서술\n4. [이미지 배치 규칙]: 본문 이야기 흐름에 맞추어 사진이 들어갈 위치에 [사진 1], [사진 2]... 마커를 문단 사이에 단독 줄로 반드시 배치해주세요."
-        if (userStyle?.tone_style) {
-          styleGuide += `\n5. [선생님 고유 맞춤 문체 지침]:\n${userStyle.tone_style}`
-        }
+        const writerPrompt = `다음 사진별 관찰 내용을 바탕으로 학부모님들이 읽으실 수 있는 따뜻하고 생동감 넘치는 3~4문단 분량의 교실 놀이/활동 블로그 글을 작성해주세요.
+
+[사진별 관찰 내용]:
+${mergedObservation}
+
+[작성 원칙 및 구성]:
+1. 제목: 계절감과 아이들의 활동 주제가 담긴 다정한 블로그 제목 (예: # [놀이 기록] 알록달록 퍼즐과 함께하는 탐색 시간)
+2. 사진 마커: 본문 흐름에 맞추어 [사진 1], [사진 2], [사진 3] 등의 마커를 문단 사이에 단독 줄로 자연스럽게 배치하세요.
+3. 내용 전개:
+   - 도입: 교실 분위기와 오늘 활동의 테마 소개
+   - 본문: 사진 속 아이들의 손동작, 교구(퍼즐, 블록, 책 등) 탐색 과정을 생생하게 서술 (이름 대신 '아이1' 또는 '우리 아이들' 표현)
+   - 마무리: 놀이를 통한 발달적 성취(소근육, 인지 발달, 집중력 등) 격려 및 가정과의 따뜻한 소통 메시지
+4. 문체: 학부모님께 친근하게 다가가는 존댓말(~했답니다, ~해보았어요 등 다정하고 정중한 어조)
+${userStyle?.tone_style ? `\n5. [선생님 고유 맞춤 문체 지침]:\n${userStyle.tone_style}` : ""}
+
+[중요]: 서두의 인사말이나 메타 코멘트 없이, 오직 학부모님께 발행될 블로그 글 본문 Markdown만 처음부터 끝까지 완성된 상태로 출력하세요.`
 
         try {
           const aiRes = await this.env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
             messages: [
               {
+                role: "system",
+                content:
+                  "You are a professional childcare teacher and blog writer. Keep internal reasoning concise, and write a rich, warm, and engaging Korean blog post for kindergarten/daycare parents based on the photo observations. Use Markdown formatting with a welcoming title, lively narrative connecting the photos, photo markers like [사진 1], [사진 2], [사진 3] on separate lines, and an encouraging closing message.",
+              },
+              {
                 role: "user",
-                content: `다음 관찰 내용을 바탕으로 유치원/어린이집 교사용 블로그 글 초안을 작성해주세요.\n\n관찰 내용:\n${mergedObservation}\n\n작성 원칙 및 문체 가이드:\n${styleGuide}`,
+                content: writerPrompt,
               },
             ],
-            max_completion_tokens: 1500,
+            max_completion_tokens: 4096,
           })
 
-          return aiRes.response || "오늘 오전 학습 시간, 우리 반 아이들은 각자 자리에 앉아 학습지를 펼쳤어요.\n\n[사진 1]\n\n아이1이 노란 연필을 두 손으로 잡고 글씨를 써 내려가고 있었어요.\n\n[사진 2]\n\n친구와 함께 즐겁게 완성했답니다."
+          const text = (aiRes as { response?: string })?.response
+          return text && text.length > 50
+            ? text
+            : "# [놀이 기록] 작은 손끝으로 완성해가는 우리들의 배움 이야기\n\n오늘 우리 반 교실에서는 아이들과 함께 알록달록한 교구를 탐색하며 즐거운 놀이 시간을 가졌습니다.\n\n[사진 1]\n\n아이들은 저마다의 방식으로 교구를 만져보고 관찰하며 호기심 가득한 눈빛으로 활동에 몰입했어요.\n\n[사진 2]\n\n작은 손으로 차근차근 완성해 나가는 과정에서 스스로 해냈다는 뿌듯한 성취감이 교실 가득 피어올랐답니다.\n\n[사진 3]\n\n아이들의 소중한 성장을 늘 따뜻한 시선으로 응원해 주시는 학부모님들께 감사드리며, 오늘 가정에서도 많은 격려와 칭찬 부탁드립니다."
         } catch {
-          return "오늘 오전 학습 시간, 우리 반 아이들은 각자 자리에 앉아 학습지를 펼쳤어요.\n\n[사진 1]\n\n아이1이 노란 연필을 두 손으로 잡고 글씨를 써 내려가고 있었어요.\n\n[사진 2]\n\n친구와 함께 즐겁게 완성했답니다."
+          return "# [놀이 기록] 작은 손끝으로 완성해가는 우리들의 배움 이야기\n\n오늘 우리 반 교실에서는 아이들과 함께 알록달록한 교구를 탐색하며 즐거운 놀이 시간을 가졌습니다.\n\n[사진 1]\n\n아이들은 저마다의 방식으로 교구를 만져보고 관찰하며 호기심 가득한 눈빛으로 활동에 몰입했어요.\n\n[사진 2]\n\n작은 손으로 차근차근 완성해 나가는 과정에서 스스로 해냈다는 뿌듯한 성취감이 교실 가득 피어올랐답니다.\n\n[사진 3]\n\n아이들의 소중한 성장을 늘 따뜻한 시선으로 응원해 주시는 학부모님들께 감사드리며, 오늘 가정에서도 많은 격려와 칭찬 부탁드립니다."
         }
       },
     )
@@ -230,7 +250,7 @@ async function executeAiModel(
   env: Env,
   model: string,
   inputs: Record<string, unknown>,
-  timeoutMs = 25000,
+  timeoutMs = 50000,
 ): Promise<string> {
   // 1. Try env.AI binding first (with timeout)
   if (env.AI) {
@@ -370,10 +390,22 @@ export async function runDirectWorkflowPipeline(
       .bind(userId)
       .first<{ tone_style: string }>()
 
-    let styleGuide = "1. 아이들의 감정/성격 추론 배제\n2. '아이1, 아이2' 등 익명 라벨 사용\n3. 관찰 가능한 행동 위주의 따뜻하고 자연스러운 서술\n4. [이미지 배치 규칙]: 본문 이야기 흐름에 맞추어 사진이 들어갈 위치에 [사진 1], [사진 2]... 마커를 문단 사이에 단독 줄로 반드시 배치해주세요."
-    if (userStyle?.tone_style) {
-      styleGuide += `\n5. [선생님 고유 맞춤 문체 지침]:\n${userStyle.tone_style}`
-    }
+    const writerPrompt = `다음 사진별 관찰 내용을 바탕으로 학부모님들이 읽으실 수 있는 따뜻하고 생동감 넘치는 3~4문단 분량의 교실 놀이/활동 블로그 글을 작성해주세요.
+
+[사진별 관찰 내용]:
+${mergedObservation}
+
+[작성 원칙 및 구성]:
+1. 제목: 계절감과 아이들의 활동 주제가 담긴 다정한 블로그 제목 (예: # [놀이 기록] 알록달록 퍼즐과 함께하는 탐색 시간)
+2. 사진 마커: 본문 흐름에 맞추어 [사진 1], [사진 2], [사진 3] 등의 마커를 문단 사이에 단독 줄로 자연스럽게 배치하세요.
+3. 내용 전개:
+   - 도입: 교실 분위기와 오늘 활동의 테마 소개
+   - 본문: 사진 속 아이들의 손동작, 교구(퍼즐, 블록, 책 등) 탐색 과정을 생생하게 서술 (이름 대신 '아이1' 또는 '우리 아이들' 표현)
+   - 마무리: 놀이를 통한 발달적 성취(소근육, 인지 발달, 집중력 등) 격려 및 가정과의 따뜻한 소통 메시지
+4. 문체: 학부모님께 친근하게 다가가는 존댓말(~했답니다, ~해보았어요 등 다정하고 정중한 어조)
+${userStyle?.tone_style ? `\n5. [선생님 고유 맞춤 문체 지침]:\n${userStyle.tone_style}` : ""}
+
+[중요]: 서두의 인사말이나 메타 코멘트 없이, 오직 학부모님께 발행될 블로그 글 본문 Markdown만 처음부터 끝까지 완성된 상태로 출력하세요.`
 
     let draftText = ""
     try {
@@ -381,15 +413,20 @@ export async function runDirectWorkflowPipeline(
         const text = await executeAiModel(env, "@cf/google/gemma-4-26b-a4b-it", {
           messages: [
             {
+              role: "system",
+              content:
+                "You are a professional childcare teacher and blog writer. Keep internal reasoning concise, and write a rich, warm, and engaging Korean blog post for kindergarten/daycare parents based on the photo observations. Use Markdown formatting with a welcoming title, lively narrative connecting the photos, photo markers like [사진 1], [사진 2], [사진 3] on separate lines, and an encouraging closing message.",
+            },
+            {
               role: "user",
-              content: `다음 관찰 내용을 바탕으로 유치원/어린이집 교사용 블로그 글 초안을 작성해주세요.\n\n관찰 내용:\n${mergedObservation}\n\n작성 원칙 및 문체 가이드:\n${styleGuide}\n\n[중요]: 인사말이나 설명 없이 오직 블로그 글 본문만을 단독으로 출력하세요.`,
+              content: writerPrompt,
             },
           ],
-          max_completion_tokens: 1500,
+          max_completion_tokens: 4096,
         })
-        if (text) {
+        if (text && text.length > 50) {
           draftText = text
-          totalNeurons += 120 // ~1200 tokens
+          totalNeurons += 120
         }
       }
     } catch {
@@ -397,7 +434,7 @@ export async function runDirectWorkflowPipeline(
     }
 
     if (!draftText) {
-      draftText = `오늘 우리 반 아이들과 함께 즐거운 배움의 시간을 가졌습니다.\n\n[사진 1]\n\n아이들이 집중하여 활동에 몰입하며 서로를 격려했어요.\n\n[사진 2]\n\n작은 손으로 차근차근 완성해 나가는 모습이 대견했답니다.`
+      draftText = `# [놀이 기록] 작은 손끝으로 완성해가는 우리들의 배움 이야기\n\n오늘 우리 반 교실에서는 아이들과 함께 알록달록한 교구를 탐색하며 즐거운 놀이 시간을 가졌습니다.\n\n[사진 1]\n\n아이들은 저마다의 방식으로 교구를 만져보고 관찰하며 호기심 가득한 눈빛으로 활동에 몰입했어요.\n\n[사진 2]\n\n작은 손으로 차근차근 완성해 나가는 과정에서 스스로 해냈다는 뿌듯한 성취감이 교실 가득 피어올랐답니다.\n\n[사진 3]\n\n아이들의 소중한 성장을 늘 따뜻한 시선으로 응원해 주시는 학부모님들께 감사드리며, 오늘 가정에서도 많은 격려와 칭찬 부탁드립니다.`
       totalNeurons += 20
     }
 
@@ -418,17 +455,22 @@ export async function runDirectWorkflowPipeline(
 
     let polishedDraft = draftText
     try {
-      if (canRunRemoteAi) {
+      if (canRunRemoteAi && draftText.length > 50) {
         const qualityText = await executeAiModel(env, "@cf/google/gemma-4-26b-a4b-it", {
           messages: [
             {
+              role: "system",
+              content:
+                "You are an expert childcare content editor. Keep internal reasoning concise. Refine the given draft by correcting any grammar or awkward expressions, ensuring photo markers [사진 1], [사진 2] are properly placed on their own lines, and preserving the warm teacher tone. Output ONLY the polished Korean blog post Markdown from title to ending.",
+            },
+            {
               role: "user",
-              content: `다음 블로그 초안에서 아이들의 감정이나 성격을 과도하게 추론한 표현이 있다면 관찰 가능한 행동 위주로 부드럽게 정정하고, 맞춤법과 [사진 1], [사진 2] 등의 마커 위치를 올바르게 정돈해주세요.\n\n초안:\n${draftText}\n\n[중요]: 에디터로서의 인사말이나 교정 원칙 설명, 피드백 요청을 일체 넣지 마시고, 교정된 최종 블로그 글 본문만을 처음부터 끝까지 그대로 출력하세요.`,
+              content: `다음 블로그 초안을 다듬어주세요. 맞춤법을 정돈하고, [사진 1], [사진 2] 등의 마커가 문단 사이에 잘 배치되도록 정리해주세요.\n\n초안:\n${draftText}\n\n[중요]: 에디터 코멘트나 설명 없이 다듬어진 최종 블로그 글 본문 Markdown만 처음부터 끝까지 출력하세요.`,
             },
           ],
-          max_completion_tokens: 1500,
+          max_completion_tokens: 4096,
         })
-        if (qualityText) {
+        if (qualityText && qualityText.length >= draftText.length * 0.7) {
           polishedDraft = qualityText
           totalNeurons += 100
         }
