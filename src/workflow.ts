@@ -321,7 +321,7 @@ async function executeAiModel(
   env: Env,
   model: string,
   inputs: Record<string, unknown>,
-  timeoutMs = 50000,
+  timeoutMs = 75000,
 ): Promise<string> {
   // 1. Try env.AI binding first (with timeout)
   if (env.AI) {

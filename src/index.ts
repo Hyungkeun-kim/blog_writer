@@ -284,6 +284,7 @@ export default {
           environment: env.ENVIRONMENT || "development",
           maxImageBytes: env.MAX_IMAGE_BYTES || 10485760,
           expirationHours: env.EXPIRATION_HOURS || 24,
+          aiTimeoutSeconds: 180,
           visionModel: "@cf/meta/llama-3.2-11b-vision-instruct",
           writerModel: "@cf/google/gemma-4-26b-a4b-it",
           maxTokens: 1500,
@@ -327,6 +328,7 @@ export default {
           "qualityModel",
           "maxOutputTokens",
           "parallelVisionSlots",
+          "aiTimeoutSeconds",
         ])
 
         // 1. Unknown keys check
@@ -355,6 +357,16 @@ export default {
           if (!Number.isInteger(val) || val < 1048576 || val > 20971520) {
             return jsonResponse(
               { error: "INVALID_RANGE", message: "최대 사진 용량은 1MB(1048576) ~ 20MB(20971520) 사이여야 합니다." },
+              400,
+            )
+          }
+        }
+
+        if ("aiTimeoutSeconds" in body) {
+          const val = Number(body.aiTimeoutSeconds)
+          if (!Number.isInteger(val) || val < 30 || val > 600) {
+            return jsonResponse(
+              { error: "INVALID_RANGE", message: "AI 처리 대기 시간 한도(aiTimeoutSeconds)는 30~600초 사이의 정수여야 합니다." },
               400,
             )
           }

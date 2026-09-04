@@ -11,6 +11,7 @@ test("Settings Validation - Rejects unknown keys", () => {
     "qualityModel",
     "maxOutputTokens",
     "parallelVisionSlots",
+    "aiTimeoutSeconds",
   ])
 
   function validate(body) {
@@ -21,10 +22,10 @@ test("Settings Validation - Rejects unknown keys", () => {
   }
 
   assert.equal(validate({ unknownHackKey: true }).valid, false)
-  assert.equal(validate({ retentionHours: 24, maxImageBytes: 10485760 }).valid, true)
+  assert.equal(validate({ retentionHours: 24, maxImageBytes: 10485760, aiTimeoutSeconds: 180 }).valid, true)
 })
 
-test("Settings Validation - Enforces ranges on retentionHours and maxImageBytes", () => {
+test("Settings Validation - Enforces ranges on retentionHours, maxImageBytes, and aiTimeoutSeconds", () => {
   function validateRanges(body) {
     if ("retentionHours" in body) {
       const val = Number(body.retentionHours)
@@ -33,6 +34,10 @@ test("Settings Validation - Enforces ranges on retentionHours and maxImageBytes"
     if ("maxImageBytes" in body) {
       const val = Number(body.maxImageBytes)
       if (!Number.isInteger(val) || val < 1048576 || val > 20971520) return false
+    }
+    if ("aiTimeoutSeconds" in body) {
+      const val = Number(body.aiTimeoutSeconds)
+      if (!Number.isInteger(val) || val < 30 || val > 600) return false
     }
     return true
   }
@@ -43,4 +48,7 @@ test("Settings Validation - Enforces ranges on retentionHours and maxImageBytes"
   assert.equal(validateRanges({ maxImageBytes: 500 }), false) // Under 1MB
   assert.equal(validateRanges({ maxImageBytes: 50000000 }), false) // Over 20MB
   assert.equal(validateRanges({ maxImageBytes: 10485760 }), true) // 10MB
+  assert.equal(validateRanges({ aiTimeoutSeconds: 20 }), false) // Under 30s
+  assert.equal(validateRanges({ aiTimeoutSeconds: 700 }), false) // Over 600s
+  assert.equal(validateRanges({ aiTimeoutSeconds: 180 }), true)
 })

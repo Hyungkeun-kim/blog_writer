@@ -478,13 +478,28 @@
           </div>
         </div>
 
-        <div class="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
-          <label class="font-bold text-slate-800">사진당 최대 허용 크기 (MAX_IMAGE_BYTES)</label>
-          <select id="cfgMaxBytesSelect" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-hidden">
-            <option value="5242880">5 MB (5,242,880 Bytes)</option>
-            <option value="10485760" selected>10 MB (10,485,760 Bytes - 권장)</option>
-            <option value="20971520">20 MB (20,971,520 Bytes)</option>
-          </select>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+            <label class="font-bold text-slate-800">사진당 최대 허용 크기</label>
+            <select id="cfgMaxBytesSelect" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-hidden">
+              <option value="5242880">5 MB (5,242,880 Bytes)</option>
+              <option value="10485760" selected>10 MB (10,485,760 Bytes - 권장)</option>
+              <option value="20971520">20 MB (20,971,520 Bytes)</option>
+            </select>
+          </div>
+          <div class="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+            <label class="font-bold text-slate-800 flex items-center justify-between">
+              <span>AI 처리 대기 시간 한도</span>
+              <span class="text-[10px] text-indigo-600 font-semibold">초과 방지</span>
+            </label>
+            <select id="cfgTimeoutSelect" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-hidden">
+              <option value="90">90초 (1분 30초)</option>
+              <option value="120">120초 (2분)</option>
+              <option value="180" selected>180초 (3분 - 권장)</option>
+              <option value="240">240초 (4분)</option>
+              <option value="300">300초 (5분)</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -509,14 +524,18 @@
             <p class="text-[11px] text-slate-500">선생님 고유의 다정한 어조와 사진 위치 마커를 반영한 이야기 생성</p>
           </div>
 
-          <div class="grid grid-cols-2 gap-3">
-            <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-              <span class="font-bold text-slate-800">병렬 Vision 슬롯</span>
-              <p class="text-[11px] text-slate-600">최대 3슬롯 동시 배치 분석</p>
+          <div class="grid grid-cols-3 gap-2">
+            <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-0.5">
+              <span class="font-bold text-slate-800">병렬 Vision</span>
+              <p class="text-[11px] text-slate-600">3슬롯 배치</p>
             </div>
-            <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-              <span class="font-bold text-slate-800">최대 생성 토큰</span>
-              <p class="text-[11px] text-slate-600">1,500 토큰 (글자 수 약 1,000~1,500자)</p>
+            <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-0.5">
+              <span class="font-bold text-slate-800">최대 토큰</span>
+              <p class="text-[11px] text-slate-600">1,500 토큰</p>
+            </div>
+            <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-0.5">
+              <span class="font-bold text-slate-800">대기 한도</span>
+              <p class="text-[11px] text-indigo-600 font-semibold" id="diag_aiTimeoutLabel">180초 (3분)</p>
             </div>
           </div>
         </div>

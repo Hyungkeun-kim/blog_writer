@@ -16,6 +16,7 @@ export class StudioApp {
     this.currentPost = null;
     this.currentPostPhotos = [];
     this.activeEditorTab = 'preview'; // 'preview' or 'edit'
+    this.aiTimeoutSeconds = 180;
 
     this.init();
   }
@@ -25,10 +26,22 @@ export class StudioApp {
     this.updateControls();
     this.renderVisualPreview();
     await this.checkAuthStatus();
+    await this.loadInitialSettings();
     await this.refreshStyleProfile();
     await this.refreshSavedPosts();
     if (window.lucide) {
       window.lucide.createIcons();
+    }
+  }
+
+  async loadInitialSettings() {
+    try {
+      const data = await api.getSettings();
+      if (data?.settings?.aiTimeoutSeconds) {
+        this.aiTimeoutSeconds = Number(data.settings.aiTimeoutSeconds);
+      }
+    } catch (_) {
+      // Ignore initial load error if offline or unauthenticated
     }
   }
 
@@ -661,11 +674,17 @@ export class StudioApp {
       await api.startJob(this.currentJobId);
 
       // Step 4: Polling Status
+      const pollIntervalMs = 1500;
+      const timeoutLimitSec = this.aiTimeoutSeconds || 180;
+      const maxAttempts = Math.ceil((timeoutLimitSec * 1000) / pollIntervalMs);
       let attempts = 0;
       let finished = false;
-      while (attempts < 60 && !finished) {
-        await new Promise((r) => setTimeout(r, 1500));
+      const startTime = Date.now();
+
+      while (attempts < maxAttempts && !finished) {
+        await new Promise((r) => setTimeout(r, pollIntervalMs));
         attempts++;
+        const elapsedSec = Math.round((Date.now() - startTime) / 1000);
         const statusData = await api.getJob(this.currentJobId);
         if (statusData.job) {
           if (statusData.job.progress_stage === 'pii_warning') {
@@ -684,9 +703,17 @@ export class StudioApp {
             throw new Error(`작업 종료: ${statusData.job.failure_code || '직접 식별정보 탐지로 안전 종료됨'}`);
           } else {
             const stage = statusData.job.progress_stage || 'ai_processing';
+            const stageLabels = {
+              'vision': '사진 정밀 분석 중',
+              'writer': '초안 문장 작성 중',
+              'quality': '품질 및 사실 검토 중',
+              'ai_processing': '인공지능 처리 중',
+            };
+            const stageLabel = stageLabels[stage] || stage;
+            const progressPct = Math.min(94, 60 + Math.floor((attempts / maxAttempts) * 34));
             this.setPipelineProgress(
-              Math.min(94, 60 + Math.floor(attempts / 2)),
-              `3/4. 인공지능 맞춤 작성 진행 중 (${stage})...`,
+              progressPct,
+              `3/4. ${stageLabel} (${elapsedSec}초 / 대기한도 ${timeoutLimitSec}초)...`,
               '작성 중',
             );
           }
@@ -694,7 +721,9 @@ export class StudioApp {
       }
 
       if (!finished) {
-        throw new Error("인공지능 모델 처리 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.");
+        throw new Error(
+          `인공지능 모델 처리 시간이 한도(${timeoutLimitSec}초)를 초과하였습니다. 사진 장수가 많거나 Cloudflare AI 처리량이 많을 경우 [환경설정]에서 대기 시간 한도를 늘려주세요.`
+        );
       }
 
       // Step 5: Load Draft Result
@@ -1254,6 +1283,21 @@ export class StudioApp {
         maxBytesSelect.value = String(settings.maxImageBytes);
       }
 
+      const timeoutSelect = document.getElementById('cfgTimeoutSelect');
+      if (timeoutSelect && settings.aiTimeoutSeconds) {
+        timeoutSelect.value = String(settings.aiTimeoutSeconds);
+      }
+
+      if (settings.aiTimeoutSeconds) {
+        this.aiTimeoutSeconds = Number(settings.aiTimeoutSeconds);
+      }
+
+      const timeoutLabel = document.getElementById('diag_aiTimeoutLabel');
+      if (timeoutLabel) {
+        const sec = settings.aiTimeoutSeconds || 180;
+        timeoutLabel.innerText = `${sec}초 (${Math.round(sec / 60)}분)`;
+      }
+
       const neuronUsedEl = document.getElementById('diag_neuronsUsed');
       if (neuronUsedEl) {
         neuronUsedEl.innerText = `${stats.totalNeuronsUsed || 0} / ${stats.dailyNeuronsQuota || 10000} Neurons`;
@@ -1272,13 +1316,16 @@ export class StudioApp {
   async saveSettingsNow() {
     const expSelect = document.getElementById('cfgExpirationSelect');
     const maxBytesSelect = document.getElementById('cfgMaxBytesSelect');
+    const timeoutSelect = document.getElementById('cfgTimeoutSelect');
 
     const expHours = parseInt(expSelect?.value || '24', 10);
     const maxBytes = parseInt(maxBytesSelect?.value || '10485760', 10);
+    const timeoutSec = parseInt(timeoutSelect?.value || '180', 10);
 
     const payload = {
       expirationHours: expHours,
       maxImageBytes: maxBytes,
+      aiTimeoutSeconds: timeoutSec,
     };
 
     const btn = document.getElementById('btnSaveSettings');
@@ -1286,6 +1333,11 @@ export class StudioApp {
 
     try {
       const res = await api.updateSettings(payload);
+      this.aiTimeoutSeconds = timeoutSec;
+      const timeoutLabel = document.getElementById('diag_aiTimeoutLabel');
+      if (timeoutLabel) {
+        timeoutLabel.innerText = `${timeoutSec}초 (${Math.round(timeoutSec / 60)}분)`;
+      }
       alert('💾 ' + (res.message || '설정이 D1 데이터베이스에 안전하게 영구 저장되었습니다.'));
       this.closeSettingsModal();
     } catch (err) {
