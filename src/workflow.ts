@@ -317,12 +317,59 @@ function extractAiText(aiRes: unknown): string {
   return ""
 }
 
+export interface AiCallResult {
+  text: string
+  neurons: number
+  inputTokens: number
+  outputTokens: number
+  isActual: boolean
+}
+
+export function extractAiCallResult(
+  aiRes: unknown,
+  defaultNeurons = 40,
+  defaultInTokens = 1000,
+  defaultOutTokens = 500,
+): AiCallResult {
+  if (!aiRes) {
+    return { text: "", neurons: 0, inputTokens: 0, outputTokens: 0, isActual: false }
+  }
+  const text = extractAiText(aiRes)
+  const obj = (typeof aiRes === "object" && aiRes !== null ? aiRes : {}) as Record<string, unknown>
+  const resultObj = (typeof obj.result === "object" && obj.result !== null ? obj.result : obj) as Record<string, unknown>
+  const usage = (resultObj.usage || obj.usage) as Record<string, unknown> | undefined
+
+  if (usage && typeof usage === "object") {
+    const rawNeurons = Number(usage.neurons)
+    const inTokens = Number(usage.prompt_tokens || 0)
+    const outTokens = Number(usage.completion_tokens || 0)
+    if (!isNaN(rawNeurons) && rawNeurons > 0) {
+      return {
+        text,
+        neurons: Math.round(rawNeurons * 100) / 100,
+        inputTokens: inTokens,
+        outputTokens: outTokens,
+        isActual: true,
+      }
+    }
+  }
+
+  return {
+    text,
+    neurons: defaultNeurons,
+    inputTokens: defaultInTokens,
+    outputTokens: Math.max(50, Math.round(text.length / 2)) || defaultOutTokens,
+    isActual: false,
+  }
+}
+
 async function executeAiModel(
   env: Env,
   model: string,
   inputs: Record<string, unknown>,
   timeoutMs = 75000,
-): Promise<string> {
+  defaultNeurons = 40,
+): Promise<AiCallResult> {
   // 1. Try env.AI binding first (with timeout)
   if (env.AI) {
     try {
@@ -331,8 +378,8 @@ async function executeAiModel(
         setTimeout(() => reject(new Error("AI_BINDING_TIMEOUT")), timeoutMs),
       )
       const res = await Promise.race([bindingPromise, timeoutPromise])
-      const text = extractAiText(res)
-      if (text) return text
+      const result = extractAiCallResult(res, defaultNeurons)
+      if (result.text) return result
     } catch {
       // Fall through to direct REST API if binding fails or times out
     }
@@ -360,15 +407,15 @@ async function executeAiModel(
       clearTimeout(timer)
       if (resp.ok) {
         const json: unknown = await resp.json()
-        const text = extractAiText(json)
-        if (text) return text
+        const result = extractAiCallResult(json, defaultNeurons)
+        if (result.text) return result
       }
     } catch {
       // Return empty if REST API also fails
     }
   }
 
-  return ""
+  return { text: "", neurons: 0, inputTokens: 0, outputTokens: 0, isActual: false }
 }
 
 /**
@@ -395,6 +442,8 @@ export async function runDirectWorkflowPipeline(
     // 2. Vision analysis (Batch of 3)
     const visionObservations: string[] = []
     let totalNeurons = 0
+    let visionNeuronsTotal = 0
+    let visionActual = false
 
     const canRunRemoteAi = Boolean(env.ENVIRONMENT === "production" || env.CLOUDFLARE_API_TOKEN)
 
@@ -405,14 +454,21 @@ export async function runDirectWorkflowPipeline(
         const r2Obj = await env.R2_BUCKET.get(slot.object_key)
         if (r2Obj && canRunRemoteAi) {
           const buffer = await r2Obj.arrayBuffer()
-          const text = await executeAiModel(env, "@cf/meta/llama-3.2-11b-vision-instruct", {
-            image: [...new Uint8Array(buffer)],
-            prompt: VISION_PROMPT,
-            max_tokens: 400,
-          })
-          if (text) {
-            obs = `아이${slot.slot_id + 1} (사진 ${slot.slot_id + 1}): ${text}`
-            totalNeurons += 220
+          const res = await executeAiModel(
+            env,
+            "@cf/meta/llama-3.2-11b-vision-instruct",
+            {
+              image: [...new Uint8Array(buffer)],
+              prompt: VISION_PROMPT,
+              max_tokens: 400,
+            },
+            75000,
+            50, // Realistic rate per photo
+          )
+          if (res.text) {
+            obs = `아이${slot.slot_id + 1} (사진 ${slot.slot_id + 1}): ${res.text}`
+            visionNeuronsTotal += res.neurons
+            visionActual = visionActual || res.isActual
           }
         }
       } catch {
@@ -421,11 +477,12 @@ export async function runDirectWorkflowPipeline(
 
       if (!obs) {
         obs = `아이${slot.slot_id + 1} (사진 ${slot.slot_id + 1})이 책상에서 활동지와 교구를 살펴보며 조작하는 모습.`
-        totalNeurons += 50
+        visionNeuronsTotal += 10
       }
       visionObservations.push(obs)
     }
 
+    totalNeurons += visionNeuronsTotal
     const mergedObservation = visionObservations.join("\n")
     await recordUsageEvent(
       env,
@@ -434,9 +491,9 @@ export async function runDirectWorkflowPipeline(
       "@cf/meta/llama-3.2-11b-vision-instruct",
       "vision",
       slots.length * 6500,
-      slots.length * 400,
-      totalNeurons,
-      canRunRemoteAi ? "actual" : "estimated",
+      slots.length * 350,
+      Math.round(visionNeuronsTotal),
+      visionActual ? "actual" : "estimated",
     )
 
     // 3. 1차 PII 검사 (Input Check)
@@ -464,24 +521,34 @@ export async function runDirectWorkflowPipeline(
     const writerPrompt = buildWriterPrompt(mergedObservation, slots.length, userStyle?.tone_style)
 
     let draftText = ""
+    let writerNeurons = 0
+    let writerActual = false
     try {
       if (canRunRemoteAi) {
-        const text = await executeAiModel(env, "@cf/google/gemma-4-26b-a4b-it", {
-          messages: [
-            {
-              role: "system",
-              content: WRITER_SYSTEM_PROMPT,
-            },
-            {
-              role: "user",
-              content: writerPrompt,
-            },
-          ],
-          max_completion_tokens: 4096,
-        })
-        if (text && text.length > 50) {
-          draftText = text
-          totalNeurons += 120
+        const res = await executeAiModel(
+          env,
+          "@cf/google/gemma-4-26b-a4b-it",
+          {
+            messages: [
+              {
+                role: "system",
+                content: WRITER_SYSTEM_PROMPT,
+              },
+              {
+                role: "user",
+                content: writerPrompt,
+              },
+            ],
+            max_completion_tokens: 4096,
+          },
+          75000,
+          40, // Realistic rate: ~40 neurons
+        )
+        if (res.text && res.text.length > 50) {
+          draftText = res.text
+          writerNeurons = res.neurons
+          writerActual = res.isActual
+          totalNeurons += writerNeurons
         }
       }
     } catch {
@@ -490,7 +557,8 @@ export async function runDirectWorkflowPipeline(
 
     if (!draftText) {
       draftText = FALLBACK_DRAFT_TEXT
-      totalNeurons += 20
+      writerNeurons = 10
+      totalNeurons += writerNeurons
     }
 
     await recordUsageEvent(
@@ -499,51 +567,63 @@ export async function runDirectWorkflowPipeline(
       jobId,
       "@cf/google/gemma-4-26b-a4b-it",
       "writer",
-      1200,
-      800,
-      120,
-      canRunRemoteAi ? "actual" : "estimated",
+      1500,
+      1000,
+      Math.round(writerNeurons),
+      writerActual ? "actual" : "estimated",
     )
 
     // 5. Quality 검수 단계 (독립 AI 모델 교정 및 사실 기반 정제)
     await transitionJob(env, jobId, "processing", "processing", { progressStage: "quality" })
 
     let polishedDraft = draftText
+    let qualityNeurons = 0
+    let qualityActual = false
     try {
       if (canRunRemoteAi && draftText.length > 50) {
-        const qualityText = await executeAiModel(env, "@cf/google/gemma-4-26b-a4b-it", {
-          messages: [
-            {
-              role: "system",
-              content: QUALITY_SYSTEM_PROMPT,
-            },
-            {
-              role: "user",
-              content: buildQualityPrompt(draftText, slots.length),
-            },
-          ],
-          max_completion_tokens: 4096,
-        })
-        if (qualityText && qualityText.length >= draftText.length * 0.7) {
-          polishedDraft = qualityText
-          totalNeurons += 100
+        const res = await executeAiModel(
+          env,
+          "@cf/google/gemma-4-26b-a4b-it",
+          {
+            messages: [
+              {
+                role: "system",
+                content: QUALITY_SYSTEM_PROMPT,
+              },
+              {
+                role: "user",
+                content: buildQualityPrompt(draftText, slots.length),
+              },
+            ],
+            max_completion_tokens: 4096,
+          },
+          75000,
+          45, // Realistic rate: ~45 neurons
+        )
+        if (res.text && res.text.length >= draftText.length * 0.7) {
+          polishedDraft = res.text
+          qualityNeurons = res.neurons
+          qualityActual = res.isActual
+          totalNeurons += qualityNeurons
         }
       }
     } catch {
       // Keep draftText if quality model is unavailable
     }
 
-    await recordUsageEvent(
-      env,
-      userId,
-      jobId,
-      "@cf/google/gemma-4-26b-a4b-it",
-      "quality",
-      1000,
-      600,
-      100,
-      canRunRemoteAi ? "actual" : "estimated",
-    )
+    if (qualityNeurons > 0) {
+      await recordUsageEvent(
+        env,
+        userId,
+        jobId,
+        "@cf/google/gemma-4-26b-a4b-it",
+        "quality",
+        1800,
+        1000,
+        Math.round(qualityNeurons),
+        qualityActual ? "actual" : "estimated",
+      )
+    }
 
     // 6. 2차 PII 검사 (Output Check)
     const pii2 = detectPII(polishedDraft)
@@ -571,7 +651,7 @@ export async function runDirectWorkflowPipeline(
     await env.DB.prepare(
       "UPDATE generation_jobs SET ai_neurons_used = ?, review_artifact_id = ?, identifier_checks_passed = 1 WHERE id = ?",
     )
-      .bind(totalNeurons, artifactId, jobId)
+      .bind(Math.round(totalNeurons), artifactId, jobId)
       .run()
 
     await transitionJob(env, jobId, "processing", "waiting", {

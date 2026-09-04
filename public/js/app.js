@@ -1300,7 +1300,20 @@ export class StudioApp {
 
       const neuronUsedEl = document.getElementById('diag_neuronsUsed');
       if (neuronUsedEl) {
-        neuronUsedEl.innerText = `${stats.totalNeuronsUsed || 0} / ${stats.dailyNeuronsQuota || 10000} Neurons`;
+        const used = Math.round(stats.totalNeuronsUsed || 0);
+        const quota = stats.dailyNeuronsQuota || 10000;
+        const pct = Math.round((used / quota) * 100);
+        let colorClass = 'text-indigo-700';
+        if (pct >= 90) colorClass = 'text-red-600';
+        else if (pct >= 70) colorClass = 'text-amber-600';
+
+        neuronUsedEl.className = `text-xs sm:text-sm font-extrabold font-mono mt-1 ${colorClass}`;
+        neuronUsedEl.innerText = `${used.toLocaleString()} / ${quota.toLocaleString()} Neurons (${pct}%)`;
+      }
+
+      const utcLabel = document.getElementById('diag_utcDateLabel');
+      if (utcLabel && stats.todayUtcDate) {
+        utcLabel.innerText = `(${stats.todayUtcDate} 00:00 UTC 기준)`;
       }
 
       const totalJobs = document.getElementById('diag_totalJobs');

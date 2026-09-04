@@ -569,9 +569,13 @@
             <div class="text-[10px] text-slate-500 font-semibold">발행 완료 글</div>
             <div class="text-sm sm:text-base font-extrabold text-emerald-600 font-mono" id="diag_totalPosts">0 건</div>
           </div>
-          <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 col-span-2">
-            <div class="text-[10px] text-slate-500 font-semibold">오늘의 AI 소모량 / 무료 한도</div>
-            <div class="text-xs sm:text-sm font-extrabold text-indigo-700 font-mono mt-1" id="diag_neuronsUsed">0 / 10,000 Neurons</div>
+          <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 col-span-2 flex flex-col justify-between">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] text-slate-500 font-semibold">오늘의 AI 소모량 / 무료 한도</span>
+              <span class="text-[9px] text-slate-400 font-mono" id="diag_utcDateLabel">(00:00 UTC 기준)</span>
+            </div>
+            <div class="text-xs sm:text-sm font-extrabold text-indigo-700 font-mono mt-1" id="diag_neuronsUsed">0 / 10,000 Neurons (0%)</div>
+            <div class="text-[9px] text-slate-400 mt-1">※ 실제 청구 및 잔여 무료량은 Cloudflare 콘솔 기준</div>
           </div>
         </div>
 

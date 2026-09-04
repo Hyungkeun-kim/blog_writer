@@ -262,13 +262,14 @@ export default {
 
       // 6. GET /api/settings - Query Actual Persistent Settings
       if (pathname === "/api/settings" && request.method === "GET") {
-        const [jobStats, postStats, slotStats, styleProfile, userSettingsRow, neuronSum] = await Promise.all([
+        const todayUtc = new Date().toISOString().slice(0, 10)
+        const [jobStats, postStats, slotStats, styleProfile, userSettingsRow, todayNeuronRow] = await Promise.all([
           env.DB.prepare("SELECT count(*) as count FROM generation_jobs WHERE user_id = ?").bind(userId).first<{ count: number }>(),
           env.DB.prepare("SELECT count(*) as count FROM posts WHERE user_id = ?").bind(userId).first<{ count: number }>(),
           env.DB.prepare("SELECT count(*) as count FROM upload_slots WHERE user_id = ?").bind(userId).first<{ count: number }>(),
           getUserStyleProfile(env, userId),
           env.DB.prepare("SELECT settings_json FROM user_settings WHERE user_id = ?").bind(userId).first<UserSettings>(),
-          env.DB.prepare("SELECT sum(ai_neurons_used) as total_neurons FROM generation_jobs WHERE user_id = ?").bind(userId).first<{ total_neurons: number }>(),
+          env.DB.prepare("SELECT sum(neurons) as total_neurons FROM ai_usage_events WHERE owner_id = ? AND utc_date = ?").bind(userId, todayUtc).first<{ total_neurons: number }>(),
         ])
 
         let savedSettings = {}
@@ -308,8 +309,10 @@ export default {
             totalSlots: slotStats?.count ?? 0,
             hasStyleProfile: Boolean(styleProfile?.tone_style),
             styleProfileCount: styleProfile?.learned_post_count ?? 0,
-            totalNeuronsUsed: neuronSum?.total_neurons ?? 0,
+            totalNeuronsUsed: todayNeuronRow?.total_neurons ?? 0,
             dailyNeuronsQuota: 10000,
+            todayUtcDate: todayUtc,
+            disclaimer: "실제 청구 및 무료 할당량은 Cloudflare Dashboard가 최종 기준입니다.",
             r2BucketName: "blog-writer-photos",
             d1DatabaseName: "blog-writer-db",
           },
