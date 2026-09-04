@@ -382,7 +382,7 @@ export async function runDirectWorkflowPipeline(
           messages: [
             {
               role: "user",
-              content: `다음 관찰 내용을 바탕으로 유치원/어린이집 교사용 블로그 글 초안을 작성해주세요.\n\n관찰 내용:\n${mergedObservation}\n\n작성 원칙 및 문체 가이드:\n${styleGuide}`,
+              content: `다음 관찰 내용을 바탕으로 유치원/어린이집 교사용 블로그 글 초안을 작성해주세요.\n\n관찰 내용:\n${mergedObservation}\n\n작성 원칙 및 문체 가이드:\n${styleGuide}\n\n[중요]: 인사말이나 설명 없이 오직 블로그 글 본문만을 단독으로 출력하세요.`,
             },
           ],
           max_completion_tokens: 1500,
@@ -423,7 +423,7 @@ export async function runDirectWorkflowPipeline(
           messages: [
             {
               role: "user",
-              content: `당신은 교실 관찰일지 전문 교정 에디터입니다. 다음 초안에서 아이들의 감정이나 성격을 과도하게 추론한 표현이 있다면 관찰 가능한 행동 위주로 부드럽게 정정하고, 맞춤법과 [사진 1], [사진 2] 등의 마커 위치를 올바르게 정돈해주세요.\n\n초안:\n${draftText}`,
+              content: `다음 블로그 초안에서 아이들의 감정이나 성격을 과도하게 추론한 표현이 있다면 관찰 가능한 행동 위주로 부드럽게 정정하고, 맞춤법과 [사진 1], [사진 2] 등의 마커 위치를 올바르게 정돈해주세요.\n\n초안:\n${draftText}\n\n[중요]: 에디터로서의 인사말이나 교정 원칙 설명, 피드백 요청을 일체 넣지 마시고, 교정된 최종 블로그 글 본문만을 처음부터 끝까지 그대로 출력하세요.`,
             },
           ],
           max_completion_tokens: 1500,
