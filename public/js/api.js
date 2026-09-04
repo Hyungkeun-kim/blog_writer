@@ -160,9 +160,10 @@ export class BlogWriterApi {
   }
 
   // 6. Finish & Purge
-  async finishJob(jobId) {
+  async finishJob(jobId, data) {
     return this._request(`/api/jobs/${jobId}/finish`, {
       method: 'POST',
+      body: data ? JSON.stringify(data) : undefined,
     });
   }
 

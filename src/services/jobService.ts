@@ -119,7 +119,7 @@ export async function transitionJob(
   expectedStatus: JobStatus,
   nextStatus: JobStatus,
   patch: {
-    waitingReason?: WaitingReason
+    waitingReason?: WaitingReason | null
     progressStage?: string | null
     failureCode?: string | null
     reviewArtifactId?: string | null
@@ -130,28 +130,37 @@ export async function transitionJob(
     throw new Error(`Invalid status transition from ${expectedStatus} to ${nextStatus}`)
   }
 
-  const res = await env.DB.prepare(
-    `UPDATE generation_jobs
-     SET status = ?,
-         waiting_reason = COALESCE(?, waiting_reason),
-         progress_stage = COALESCE(?, progress_stage),
-         failure_code = COALESCE(?, failure_code),
-         review_artifact_id = COALESCE(?, review_artifact_id),
-         identifier_checks_passed = COALESCE(?, identifier_checks_passed),
-         updated_at = datetime('now')
-     WHERE id = ? AND status = ?`,
-  )
-    .bind(
-      nextStatus,
-      patch.waitingReason !== undefined ? patch.waitingReason : null,
-      patch.progressStage !== undefined ? patch.progressStage : null,
-      patch.failureCode !== undefined ? patch.failureCode : null,
-      patch.reviewArtifactId !== undefined ? patch.reviewArtifactId : null,
-      patch.identifierChecksPassed !== undefined ? patch.identifierChecksPassed : null,
-      jobId,
-      expectedStatus,
-    )
-    .run()
+  const fields: string[] = ["status = ?", "updated_at = datetime('now')"]
+  const values: (string | number | null)[] = [nextStatus]
+
+  if (patch.waitingReason !== undefined) {
+    fields.push("waiting_reason = ?")
+    values.push(patch.waitingReason)
+  } else if (nextStatus !== "waiting") {
+    fields.push("waiting_reason = NULL")
+  }
+
+  if (patch.progressStage !== undefined) {
+    fields.push("progress_stage = ?")
+    values.push(patch.progressStage)
+  }
+  if (patch.failureCode !== undefined) {
+    fields.push("failure_code = ?")
+    values.push(patch.failureCode)
+  }
+  if (patch.reviewArtifactId !== undefined) {
+    fields.push("review_artifact_id = ?")
+    values.push(patch.reviewArtifactId)
+  }
+  if (patch.identifierChecksPassed !== undefined) {
+    fields.push("identifier_checks_passed = ?")
+    values.push(patch.identifierChecksPassed)
+  }
+
+  values.push(jobId, expectedStatus)
+
+  const sql = `UPDATE generation_jobs SET ${fields.join(", ")} WHERE id = ? AND status = ?`
+  const res = await env.DB.prepare(sql).bind(...values).run()
 
   return (res.meta?.changes ?? 0) > 0
 }
@@ -175,6 +184,16 @@ export async function assertNoJobArtifactsRemain(
 
   if ((artifacts?.count ?? 0) > 0) {
     throw new Error(`임시 산출물(${artifacts?.count}건)이 완전히 소각되지 않았습니다.`)
+  }
+
+  const slots = await env.DB.prepare(
+    "SELECT count(*) as count FROM upload_slots WHERE job_id = ?",
+  )
+    .bind(jobId)
+    .first<{ count: number }>()
+
+  if ((slots?.count ?? 0) > 0) {
+    throw new Error(`임시 업로드 슬롯(${slots?.count}건)이 완전히 소각되지 않았습니다.`)
   }
 }
 
@@ -210,8 +229,9 @@ export async function purgeJobR2AndTempData(
     }
   }
 
-  // 3. Delete temp_artifacts
+  // 3. Delete temp_artifacts and upload_slots
   await env.DB.prepare("DELETE FROM temp_artifacts WHERE job_id = ?").bind(jobId).run()
+  await env.DB.prepare("DELETE FROM upload_slots WHERE job_id = ?").bind(jobId).run()
 
   // 4. Assert no residual objects
   await assertNoJobArtifactsRemain(env, userId, jobId)
@@ -226,6 +246,7 @@ export async function finalizeJobByUser(
   env: Env,
   userId: string,
   jobId: string,
+  userEdits?: { title?: string; content?: string },
 ): Promise<{ post: Post }> {
   const job = await getOwnedJob(env, userId, jobId)
   if (job.status !== "waiting" || job.waiting_reason !== "user_review") {
@@ -244,14 +265,27 @@ export async function finalizeJobByUser(
   }
 
   const postId = generateId("post")
-  let title = "오늘의 교실 이야기"
-  let content = draftArtifact.content
-  try {
-    const parsed = JSON.parse(draftArtifact.content)
-    if (parsed.title) title = parsed.title
-    if (parsed.content) content = parsed.content
-  } catch {
-    // raw text
+  let title = userEdits?.title?.trim() || "오늘의 교실 이야기"
+  let content = userEdits?.content?.trim() || draftArtifact.content
+
+  if (!userEdits?.title) {
+    try {
+      const parsed = JSON.parse(draftArtifact.content)
+      if (parsed.title) title = parsed.title
+      if (parsed.content && !userEdits?.content) content = parsed.content
+    } catch {
+      // raw text
+    }
+
+    if (title === "오늘의 교실 이야기" && content) {
+      const titleMatch = content.match(/^(?:#\s*|제목\s*:\s*)([^\n]+)\n*/)
+      if (titleMatch) {
+        title = titleMatch[1].replace(/^[[(【\s]+|[\s\])}】]+$/g, "").trim()
+        if (!userEdits?.content) {
+          content = content.slice(titleMatch[0].length).trim()
+        }
+      }
+    }
   }
 
   const r2MarkdownKey = `users/${userId}/posts/${postId}.md`
@@ -329,7 +363,7 @@ export async function finalizeJobByUser(
     content,
     r2_markdown_key: r2MarkdownKey,
     summary,
-    tags: "#관찰일지 #교실이야기",
+    tags: "#활동기록 #교실이야기",
     visibility: "published",
     created_at: new Date().toISOString(),
   }
@@ -354,6 +388,7 @@ export async function purgeExpiredPhotos(env: Env, now: Date): Promise<number> {
       // Best effort on batch schedule
     }
   }
+  await env.DB.prepare("DELETE FROM upload_slots WHERE expires_at < ?").bind(nowIso).run()
   return count
 }
 

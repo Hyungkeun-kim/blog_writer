@@ -10,7 +10,7 @@
     "dev": "wrangler dev",
     "build": "wrangler deploy --dry-run --outdir dist",
     "d1:migrate:local": "wrangler d1 execute blog-writer-db --local --file=migrations/0001_initial_schema.sql",
-    "test": "node --test tests/state-machine.test.mjs tests/pii-detection.test.mjs tests/maintenance-harness.test.mjs tests/style-learning.test.mjs tests/auth-guard.test.mjs tests/image-preprocessing.test.mjs tests/r2-cleanup-pending.test.mjs tests/user-settings-d1.test.mjs tests/auth-firebase-allowlist.test.mjs tests/pii-mask-blocked.test.mjs tests/server-exif-rejection.test.mjs tests/settings-validation.test.mjs tests/daily-model-usage.test.mjs",
+    "test": "node --test tests/state-machine.test.mjs tests/pii-detection.test.mjs tests/maintenance-harness.test.mjs tests/style-learning.test.mjs tests/auth-guard.test.mjs tests/image-preprocessing.test.mjs tests/r2-cleanup-pending.test.mjs tests/user-settings-d1.test.mjs tests/auth-firebase-allowlist.test.mjs tests/pii-mask-blocked.test.mjs tests/server-exif-rejection.test.mjs tests/settings-validation.test.mjs tests/daily-model-usage.test.mjs tests/job-cleanup-and-quality.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern node_modules",
     "check:state": "node scripts/check-state-machine.mjs",
     "check:pii": "node scripts/check-pii-rules.mjs",

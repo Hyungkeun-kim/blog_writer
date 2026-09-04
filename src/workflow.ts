@@ -34,6 +34,78 @@ export async function recordUsageEvent(
   }
 }
 
+export const VISION_PROMPT = `사진에 보이는 교구, 사물, 아이의 실제 손동작과 물리적 행동을 있는 그대로 한국어로 구체적이고 정확하게 묘사하세요:
+1. 교구 및 학습 자료: 활동지에 인쇄된 문자나 수학 연산 기호, 모양 블록, 나무 막대, 플라스틱 연결 부위 색상(빨간색 플라스틱 연결 캡 등), 필기도구, 손에 쥔 간식 등 실제로 관찰되는 사물을 사실 그대로 구체적으로 식별하세요.
+2. 손동작과 행동: 아이가 손으로 쥐고 있는 교구, 막대를 연결하는 동작, 종이에 필기하는 동작, 시선 방향 등 관찰 가능한 물리적 행동만 적으세요.
+3. 절대 금지: 사진에 없는 가상의 사물(고양이, 주스, 동화책 등)을 지어내지 마세요. 내면의 감정, 표정 해석(눈빛, 몰입, 성취감, 즐거움), 성격이나 발달 효과를 절대 추론하거나 상상하지 마세요.
+4. 인물 지칭: 이름 대신 '아이'로 지칭하세요.`
+
+export const WRITER_SYSTEM_PROMPT =
+  "You are a professional childcare teacher and blog writer. Keep internal reasoning concise. Write an authentic, warm, and engaging Korean blog post for kindergarten/daycare parents strictly based on the provided photo observations. Strictly adhere to visible facts and concrete actions. Never invent unobserved objects (e.g. cats, juice, fictional books) and never infer inner psychological feelings, facial expressions (e.g. glowing eyes, deep immersion), or unobserved developmental claims (e.g. sense of achievement, cognitive boost). Ensure every photo marker from [사진 1] to [사진 N] is placed on its own line and accompanied by rich, factual narrative paragraphs before and after."
+
+export function buildWriterPrompt(
+  mergedObservation: string,
+  totalPhotos: number,
+  toneStyle?: string,
+): string {
+  return `다음 사진별 실제 관찰 내용을 바탕으로 학부모님들께 공유할 따뜻하고 정돈된 교실 활동 블로그 글을 작성해주세요.
+
+[사진별 실제 관찰 내용]:
+${mergedObservation}
+
+[작성 원칙 및 구성 지침 (엄격 준수)]:
+1. 사실성 및 관찰 충실:
+   - 반드시 위에 제공된 [사진별 실제 관찰 내용]에 명시된 교구(나무 막대, 연산 활동지, 모양 블록, 연결 부위 등), 사물, 손동작만을 근거로 작성하세요.
+   - 관찰 내용에 없는 사물(고양이, 주스, 가상의 동화책 등)을 절대 창작하거나 왜곡하지 마세요.
+   - 비관찰적 추론 금지: "반짝이는 눈빛", "즐거운 시간", "깊은 몰입감", "뿌듯한 성취감", "상상력·집중력·사고력 향상" 등 아이의 내면 심리, 감정, 발달 효과를 주관적으로 단정하거나 과장하는 상투적 표현을 완전히 배제하세요.
+   - 오직 눈에 보이는 구체적 행동(예: 막대를 연결 부위에 끼우는 모습, 활동지의 연산 문제를 연필로 적어 내려가는 손끝)과 활동 과정을 차분하고 따뜻하게 기록하세요.
+   - 1인이 혼자 활동하는 관찰 내용이라면 '또래놀이', '친구들과 함께' 같은 표현이나 해시태그(#또래놀이)를 절대 포함하지 마세요.
+
+2. 제목: 활동 주제와 관찰 내용이 담긴 다정한 블로그 제목 (1행에 Markdown # [제목] 형식으로 작성, 예: # [활동 기록] 나무 막대와 연산 활동지로 채운 배움의 시간)
+
+3. 사진 마커 및 문단 배치 (매우 중요):
+   - 총 ${totalPhotos}장의 사진이 있으므로, 본문에 [사진 1]부터 [사진 ${totalPhotos}]까지 순서대로 빠짐없이 배치해야 합니다.
+   - [필수 규칙] 각 사진 마커([사진 K])의 사이사이에는 반드시 해당 사진 속 활동을 구체적으로 설명하는 본문 문단(최소 2~3문장)이 위치해야 합니다.
+   - 사진 마커가 연달아 나오거나 본문 설명 없이 마커만 단독으로 붙어있는 구성을 절대 금지합니다.
+   - 구성 흐름 예시:
+     도입 문단 (오늘의 교실 활동 주제 안내)
+     [사진 1]
+     사진 1의 구체적 활동과 교구 묘사 문단
+     [사진 2]
+     사진 2의 구체적 활동과 교구 묘사 문단
+     ...
+     [사진 ${totalPhotos}]
+     사진 ${totalPhotos}의 구체적 활동과 교구 묘사 문단
+     마무리 문단 (가정과의 소통 및 차분한 마무리 인사)
+
+4. 문체: 학부모님께 친근하고 정중한 존댓말(~했답니다, ~해보았어요 등)
+${toneStyle ? `\n5. [선생님 고유 맞춤 문체 지침]:\n${toneStyle}` : ""}
+
+[중요]: 서두/말미의 메타 안내나 에디터 인사말 없이 오직 블로그 글 본문 Markdown만 처음부터 끝까지 출력하세요.`
+}
+
+export const QUALITY_SYSTEM_PROMPT =
+  "You are an expert childcare content editor. Keep internal reasoning concise. Refine the given draft by correcting any grammar or awkward expressions, ensuring photo markers [사진 1], [사진 2] are properly placed on their own lines with accompanying text before and after each marker, strictly removing unobserved fictional items or psychological buzzwords, and preserving the warm teacher tone. Output ONLY the polished Korean blog post Markdown from title to ending."
+
+export function buildQualityPrompt(draftText: string, totalPhotos: number): string {
+  return `다음 블로그 초안을 엄격히 검수하고 다듬어주세요:
+
+[검수 및 교정 규칙]:
+1. 사진 마커 확인: [사진 1]부터 [사진 ${totalPhotos}]까지 모두 포함되어 있는지, 마커 사이에 빈 공간 없이 사진별 설명 문단이 잘 채워져 있는지 확인하고 누락된 연결 문단을 보완하세요.
+2. 비관찰적 과장 표현 제거: "반짝이는 눈빛", "깊은 몰입", "성취감", "사고력 쑥쑥" 등 감정/발달 과장 표현이 있다면 차분하고 따뜻한 관찰 사실 서술로 정돈하세요.
+3. 허구적 사물 제거: 본문에 관찰 근거가 없는 왜곡 표현(고양이, 주스 등)이 있다면 사실적인 교구/활동 표현으로 정정하세요.
+4. 혼자 활동하는 글에 #또래놀이 등 어울리지 않는 해시태그가 있다면 제거하세요.
+5. 1행의 제목(# [제목])과 본문 문단 형식을 정돈하세요.
+
+초안:
+${draftText}
+
+[중요]: 에디터 설명이나 메타 코멘트 없이 오직 완성된 블로그 글 본문 Markdown만 출력하세요.`
+}
+
+export const FALLBACK_DRAFT_TEXT =
+  "# [활동 기록] 차근차근 교구를 탐색하는 우리들의 시간\n\n오늘 우리 반 교실에서는 아이들과 함께 준비된 교구와 활동지를 차근차근 살펴보며 활동을 시작했습니다.\n\n[사진 1]\n\n아이1은 책상에 놓인 활동지와 교구의 형태를 찬찬히 확인하며 손끝으로 조작해 보았어요.\n\n[사진 2]\n\n연필을 바르게 쥐고 주어진 연산 과제를 한 단계씩 해결해 나가는 모습을 볼 수 있었습니다.\n\n[사진 3]\n\n손으로 교구를 연결하고 맞추어가며 계획한 모양을 하나씩 구성해 보았답니다.\n\n오늘 교실에서 이루어진 활동 과정을 가정에서도 따뜻하게 이야기 나누어 주시길 바랍니다."
+
 export class BlogWriterWorkflow extends WorkflowEntrypoint<Env, WorkflowParams> {
   async run(event: WorkflowEvent<WorkflowParams>, step: WorkflowStep) {
     const { jobId, userId } = event.payload
@@ -65,7 +137,7 @@ export class BlogWriterWorkflow extends WorkflowEntrypoint<Env, WorkflowParams> 
             async () => {
               const r2Obj = await this.env.R2_BUCKET.get(slot.object_key)
               if (!r2Obj) {
-                return `아이${slot.slot_id + 1}이 교실에서 집중하여 학습 활동을 하고 있는 모습.`
+                return `아이${slot.slot_id + 1} (사진 ${slot.slot_id + 1})이 책상에서 활동지와 교구를 살펴보며 조작하는 모습.`
               }
 
               const buffer = await r2Obj.arrayBuffer()
@@ -74,15 +146,14 @@ export class BlogWriterWorkflow extends WorkflowEntrypoint<Env, WorkflowParams> 
                   "@cf/meta/llama-3.2-11b-vision-instruct",
                   {
                     image: [...new Uint8Array(buffer)],
-                    prompt:
-                      "Describe only visible actions, subjects, and objects in Korean. Do not infer emotions or names.",
-                    max_tokens: 150,
+                    prompt: VISION_PROMPT,
+                    max_tokens: 400,
                   },
                 )
 
-                return aiRes.response || `아이${slot.slot_id + 1}이 자리에 앉아 학습 활동 중인 모습.`
+                return aiRes.response || `아이${slot.slot_id + 1} (사진 ${slot.slot_id + 1})이 책상에서 교구를 탐색하는 모습.`
               } catch {
-                return `아이${slot.slot_id + 1}이 연필을 잡고 집중하여 활동하는 모습.`
+                return `아이${slot.slot_id + 1} (사진 ${slot.slot_id + 1})이 책상에서 교구를 탐색하는 모습.`
               }
             },
           ),
@@ -123,30 +194,14 @@ export class BlogWriterWorkflow extends WorkflowEntrypoint<Env, WorkflowParams> 
           .bind(userId)
           .first<{ tone_style: string }>()
 
-        const writerPrompt = `다음 사진별 관찰 내용을 바탕으로 학부모님들이 읽으실 수 있는 따뜻하고 생동감 넘치는 3~4문단 분량의 교실 놀이/활동 블로그 글을 작성해주세요.
-
-[사진별 관찰 내용]:
-${mergedObservation}
-
-[작성 원칙 및 구성]:
-1. 제목: 계절감과 아이들의 활동 주제가 담긴 다정한 블로그 제목 (예: # [놀이 기록] 알록달록 퍼즐과 함께하는 탐색 시간)
-2. 사진 마커: 본문 흐름에 맞추어 [사진 1], [사진 2], [사진 3] 등의 마커를 문단 사이에 단독 줄로 자연스럽게 배치하세요.
-3. 내용 전개:
-   - 도입: 교실 분위기와 오늘 활동의 테마 소개
-   - 본문: 사진 속 아이들의 손동작, 교구(퍼즐, 블록, 책 등) 탐색 과정을 생생하게 서술 (이름 대신 '아이1' 또는 '우리 아이들' 표현)
-   - 마무리: 놀이를 통한 발달적 성취(소근육, 인지 발달, 집중력 등) 격려 및 가정과의 따뜻한 소통 메시지
-4. 문체: 학부모님께 친근하게 다가가는 존댓말(~했답니다, ~해보았어요 등 다정하고 정중한 어조)
-${userStyle?.tone_style ? `\n5. [선생님 고유 맞춤 문체 지침]:\n${userStyle.tone_style}` : ""}
-
-[중요]: 서두의 인사말이나 메타 코멘트 없이, 오직 학부모님께 발행될 블로그 글 본문 Markdown만 처음부터 끝까지 완성된 상태로 출력하세요.`
+        const writerPrompt = buildWriterPrompt(mergedObservation, slots.length, userStyle?.tone_style)
 
         try {
           const aiRes = await this.env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
             messages: [
               {
                 role: "system",
-                content:
-                  "You are a professional childcare teacher and blog writer. Keep internal reasoning concise, and write a rich, warm, and engaging Korean blog post for kindergarten/daycare parents based on the photo observations. Use Markdown formatting with a welcoming title, lively narrative connecting the photos, photo markers like [사진 1], [사진 2], [사진 3] on separate lines, and an encouraging closing message.",
+                content: WRITER_SYSTEM_PROMPT,
               },
               {
                 role: "user",
@@ -157,11 +212,9 @@ ${userStyle?.tone_style ? `\n5. [선생님 고유 맞춤 문체 지침]:\n${user
           })
 
           const text = (aiRes as { response?: string })?.response
-          return text && text.length > 50
-            ? text
-            : "# [놀이 기록] 작은 손끝으로 완성해가는 우리들의 배움 이야기\n\n오늘 우리 반 교실에서는 아이들과 함께 알록달록한 교구를 탐색하며 즐거운 놀이 시간을 가졌습니다.\n\n[사진 1]\n\n아이들은 저마다의 방식으로 교구를 만져보고 관찰하며 호기심 가득한 눈빛으로 활동에 몰입했어요.\n\n[사진 2]\n\n작은 손으로 차근차근 완성해 나가는 과정에서 스스로 해냈다는 뿌듯한 성취감이 교실 가득 피어올랐답니다.\n\n[사진 3]\n\n아이들의 소중한 성장을 늘 따뜻한 시선으로 응원해 주시는 학부모님들께 감사드리며, 오늘 가정에서도 많은 격려와 칭찬 부탁드립니다."
+          return text && text.length > 50 ? text : FALLBACK_DRAFT_TEXT
         } catch {
-          return "# [놀이 기록] 작은 손끝으로 완성해가는 우리들의 배움 이야기\n\n오늘 우리 반 교실에서는 아이들과 함께 알록달록한 교구를 탐색하며 즐거운 놀이 시간을 가졌습니다.\n\n[사진 1]\n\n아이들은 저마다의 방식으로 교구를 만져보고 관찰하며 호기심 가득한 눈빛으로 활동에 몰입했어요.\n\n[사진 2]\n\n작은 손으로 차근차근 완성해 나가는 과정에서 스스로 해냈다는 뿌듯한 성취감이 교실 가득 피어올랐답니다.\n\n[사진 3]\n\n아이들의 소중한 성장을 늘 따뜻한 시선으로 응원해 주시는 학부모님들께 감사드리며, 오늘 가정에서도 많은 격려와 칭찬 부탁드립니다."
+          return FALLBACK_DRAFT_TEXT
         }
       },
     )
@@ -171,7 +224,25 @@ ${userStyle?.tone_style ? `\n5. [선생님 고유 맞춤 문체 지침]:\n${user
       "quality",
       { retries: { limit: 1, delay: "3 seconds" } },
       async () => {
-        return draftText
+        try {
+          const aiRes = await this.env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
+            messages: [
+              {
+                role: "system",
+                content: QUALITY_SYSTEM_PROMPT,
+              },
+              {
+                role: "user",
+                content: buildQualityPrompt(draftText, slots.length),
+              },
+            ],
+            max_completion_tokens: 4096,
+          })
+          const text = (aiRes as { response?: string })?.response
+          return text && text.length >= draftText.length * 0.7 ? text : draftText
+        } catch {
+          return draftText
+        }
       },
     )
 
@@ -336,12 +407,12 @@ export async function runDirectWorkflowPipeline(
           const buffer = await r2Obj.arrayBuffer()
           const text = await executeAiModel(env, "@cf/meta/llama-3.2-11b-vision-instruct", {
             image: [...new Uint8Array(buffer)],
-            prompt: "Describe only visible actions, subjects, and objects in Korean. Do not infer emotions or names.",
-            max_tokens: 150,
+            prompt: VISION_PROMPT,
+            max_tokens: 400,
           })
           if (text) {
-            obs = `아이${slot.slot_id + 1}: ${text}`
-            totalNeurons += 190 // ~6504 vision tokens approx 190 neurons
+            obs = `아이${slot.slot_id + 1} (사진 ${slot.slot_id + 1}): ${text}`
+            totalNeurons += 220
           }
         }
       } catch {
@@ -349,7 +420,7 @@ export async function runDirectWorkflowPipeline(
       }
 
       if (!obs) {
-        obs = `아이${slot.slot_id + 1}이 교실 책상에 앉아 연필을 쥐고 집중해서 학습 활동을 하는 모습.`
+        obs = `아이${slot.slot_id + 1} (사진 ${slot.slot_id + 1})이 책상에서 활동지와 교구를 살펴보며 조작하는 모습.`
         totalNeurons += 50
       }
       visionObservations.push(obs)
@@ -363,7 +434,7 @@ export async function runDirectWorkflowPipeline(
       "@cf/meta/llama-3.2-11b-vision-instruct",
       "vision",
       slots.length * 6500,
-      slots.length * 150,
+      slots.length * 400,
       totalNeurons,
       canRunRemoteAi ? "actual" : "estimated",
     )
@@ -390,22 +461,7 @@ export async function runDirectWorkflowPipeline(
       .bind(userId)
       .first<{ tone_style: string }>()
 
-    const writerPrompt = `다음 사진별 관찰 내용을 바탕으로 학부모님들이 읽으실 수 있는 따뜻하고 생동감 넘치는 3~4문단 분량의 교실 놀이/활동 블로그 글을 작성해주세요.
-
-[사진별 관찰 내용]:
-${mergedObservation}
-
-[작성 원칙 및 구성]:
-1. 제목: 계절감과 아이들의 활동 주제가 담긴 다정한 블로그 제목 (예: # [놀이 기록] 알록달록 퍼즐과 함께하는 탐색 시간)
-2. 사진 마커: 본문 흐름에 맞추어 [사진 1], [사진 2], [사진 3] 등의 마커를 문단 사이에 단독 줄로 자연스럽게 배치하세요.
-3. 내용 전개:
-   - 도입: 교실 분위기와 오늘 활동의 테마 소개
-   - 본문: 사진 속 아이들의 손동작, 교구(퍼즐, 블록, 책 등) 탐색 과정을 생생하게 서술 (이름 대신 '아이1' 또는 '우리 아이들' 표현)
-   - 마무리: 놀이를 통한 발달적 성취(소근육, 인지 발달, 집중력 등) 격려 및 가정과의 따뜻한 소통 메시지
-4. 문체: 학부모님께 친근하게 다가가는 존댓말(~했답니다, ~해보았어요 등 다정하고 정중한 어조)
-${userStyle?.tone_style ? `\n5. [선생님 고유 맞춤 문체 지침]:\n${userStyle.tone_style}` : ""}
-
-[중요]: 서두의 인사말이나 메타 코멘트 없이, 오직 학부모님께 발행될 블로그 글 본문 Markdown만 처음부터 끝까지 완성된 상태로 출력하세요.`
+    const writerPrompt = buildWriterPrompt(mergedObservation, slots.length, userStyle?.tone_style)
 
     let draftText = ""
     try {
@@ -414,8 +470,7 @@ ${userStyle?.tone_style ? `\n5. [선생님 고유 맞춤 문체 지침]:\n${user
           messages: [
             {
               role: "system",
-              content:
-                "You are a professional childcare teacher and blog writer. Keep internal reasoning concise, and write a rich, warm, and engaging Korean blog post for kindergarten/daycare parents based on the photo observations. Use Markdown formatting with a welcoming title, lively narrative connecting the photos, photo markers like [사진 1], [사진 2], [사진 3] on separate lines, and an encouraging closing message.",
+              content: WRITER_SYSTEM_PROMPT,
             },
             {
               role: "user",
@@ -434,7 +489,7 @@ ${userStyle?.tone_style ? `\n5. [선생님 고유 맞춤 문체 지침]:\n${user
     }
 
     if (!draftText) {
-      draftText = `# [놀이 기록] 작은 손끝으로 완성해가는 우리들의 배움 이야기\n\n오늘 우리 반 교실에서는 아이들과 함께 알록달록한 교구를 탐색하며 즐거운 놀이 시간을 가졌습니다.\n\n[사진 1]\n\n아이들은 저마다의 방식으로 교구를 만져보고 관찰하며 호기심 가득한 눈빛으로 활동에 몰입했어요.\n\n[사진 2]\n\n작은 손으로 차근차근 완성해 나가는 과정에서 스스로 해냈다는 뿌듯한 성취감이 교실 가득 피어올랐답니다.\n\n[사진 3]\n\n아이들의 소중한 성장을 늘 따뜻한 시선으로 응원해 주시는 학부모님들께 감사드리며, 오늘 가정에서도 많은 격려와 칭찬 부탁드립니다.`
+      draftText = FALLBACK_DRAFT_TEXT
       totalNeurons += 20
     }
 
@@ -460,12 +515,11 @@ ${userStyle?.tone_style ? `\n5. [선생님 고유 맞춤 문체 지침]:\n${user
           messages: [
             {
               role: "system",
-              content:
-                "You are an expert childcare content editor. Keep internal reasoning concise. Refine the given draft by correcting any grammar or awkward expressions, ensuring photo markers [사진 1], [사진 2] are properly placed on their own lines, and preserving the warm teacher tone. Output ONLY the polished Korean blog post Markdown from title to ending.",
+              content: QUALITY_SYSTEM_PROMPT,
             },
             {
               role: "user",
-              content: `다음 블로그 초안을 다듬어주세요. 맞춤법을 정돈하고, [사진 1], [사진 2] 등의 마커가 문단 사이에 잘 배치되도록 정리해주세요.\n\n초안:\n${draftText}\n\n[중요]: 에디터 코멘트나 설명 없이 다듬어진 최종 블로그 글 본문 Markdown만 처음부터 끝까지 출력하세요.`,
+              content: buildQualityPrompt(draftText, slots.length),
             },
           ],
           max_completion_tokens: 4096,

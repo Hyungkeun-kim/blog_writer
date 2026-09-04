@@ -144,7 +144,7 @@
         <div class="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200/80 flex items-start space-x-2.5 text-xs text-emerald-900">
           <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600 shrink-0 mt-0.5"></i>
           <p class="leading-relaxed text-[11px]">
-            <strong>안전한 사진 처리 경계:</strong> 원본 사진은 브라우저와 서버 양단에서 EXIF/GPS 메타데이터가 제거되며, 정규화된 이미지만 비공개 처리 후 작업 완료 시 즉시 영구 삭제(Zero-Retention)됩니다.
+            <strong>안전한 사진 처리 경계:</strong> 원본 사진은 브라우저와 서버 양단에서 EXIF/GPS 메타데이터가 제거되며, 정규화된 이미지만 비공개 처리 후 작업 완료 시 안전하게 파기됩니다. (임시 데이터 최대 24시간 보관)
           </p>
         </div>
 
@@ -318,17 +318,17 @@
 
           <button onclick="app.finishAndPurgeJob()" id="btnFinishJob" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center space-x-1.5">
             <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
-            <span>발행 완료 및 임시 사진 영구 삭제</span>
+            <span>발행 완료 및 임시 사진 안전 파기</span>
           </button>
         </div>
 
       </div>
 
-      <!-- Security Guarantee Card -->
+      <!-- Security Policy Card -->
       <div class="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 flex items-center justify-between text-xs text-indigo-900">
         <div class="flex items-center space-x-2">
           <i data-lucide="lock" class="w-4 h-4 text-indigo-600"></i>
-          <span class="font-medium">Cloudflare D1 & R2 Zero-Retention Security Guarantee</span>
+          <span class="font-medium">Cloudflare D1 & R2 비공개 격리 및 안전 파기 정책</span>
         </div>
         <span class="text-[11px] font-bold text-indigo-700">Client-Side Isolation</span>
       </div>
@@ -527,7 +527,7 @@
         <div class="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-1.5 text-emerald-950">
           <div class="flex items-center space-x-2 font-bold text-xs text-emerald-800">
             <i data-lucide="shield-alert" class="w-4 h-4 text-emerald-600"></i>
-            <span>2단계 실시간 PII 탐지 & Zero-Retention 파기</span>
+            <span>2단계 실시간 PII 탐지 & 임시 데이터 안전 파기</span>
           </div>
           <p class="text-[11px] leading-relaxed text-emerald-900">
             Vision 분석 직후(1차)와 최종 글 작성 직후(2차) 아래 6대 식별정보를 탐지하며, 위험 발견 시 후속 작업을 즉시 중단하고 원본을 파기합니다.
@@ -699,7 +699,7 @@
 
         <!-- Document Footer -->
         <div class="pt-4 text-center text-[10px] text-slate-400 border-t border-slate-100">
-          본 기록지는 개인정보 및 초상권 보호 원칙(Zero-Retention)에 따라 안전하게 관리되는 관찰 일지 서식입니다.
+          본 기록지는 개인정보 및 초상권 보호 원칙에 따라 안전하게 관리되는 관찰 일지 서식입니다.
         </div>
       </div>
 

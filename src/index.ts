@@ -764,10 +764,11 @@ ${draftText.slice(0, 1500)}`,
           return jsonResponse({ titles, tags })
         }
 
-        // 13. POST /api/jobs/:id/finish - User Explicit Finalization & Zero-Retention
+        // 13. POST /api/jobs/:id/finish - User Explicit Finalization & Safe Purge
         if (subRoute === "finish" && request.method === "POST") {
           try {
-            const { post } = await finalizeJobByUser(env, userId, jobId)
+            const body = (await request.json().catch(() => ({}))) as { title?: string; content?: string }
+            const { post } = await finalizeJobByUser(env, userId, jobId, body)
             return jsonResponse({ status: "completed", post, purged: true })
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : "종료 처리 중 오류가 발생했습니다."

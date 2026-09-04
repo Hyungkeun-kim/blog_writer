@@ -340,11 +340,33 @@ export class StudioApp {
 
   updateControls() {
     const btn = document.getElementById('btnGenerate');
+    const btnText = document.getElementById('btnGenerateText');
+    const currentSlotCount = document.getElementById('currentSlotCount');
+    const headerCount = document.getElementById('slotsHeaderCount') || document.getElementById('photoCountBadge');
     const hint = document.getElementById('minPhotoHint');
     const count = this.selectedFiles.length;
 
+    if (currentSlotCount) {
+      currentSlotCount.innerText = String(count);
+    }
+    if (headerCount) {
+      headerCount.innerText = String(count);
+    }
+
     if (btn) {
       btn.disabled = count < 3 || this.isProcessing;
+    }
+
+    if (btnText) {
+      if (this.isProcessing) {
+        btnText.innerText = 'AI 글 작성 진행 중...';
+      } else if (count < 3) {
+        btnText.innerText = count === 0 
+          ? '3장 이상의 사진을 추가해 주세요' 
+          : `${3 - count}장 더 추가해 주세요 (${count}/3)`;
+      } else {
+        btnText.innerText = `AI 글 생성하기 (${count}장)`;
+      }
     }
 
     if (hint) {
@@ -592,10 +614,10 @@ export class StudioApp {
       // ignore
     }
 
-    const message = `⚠️ [개인정보 식별 알림]\n\n사진 또는 관찰 내용에서 다음 식별정보가 감지되었습니다:\n👉 [ ${categories.join(', ') || '개인 식별정보'} ]\n\n현재 픽셀 단위 마스킹 기능은 준비 중으로 개인정보 보호 규약에 따라 작업이 취소되고 임시 사진이 즉시 영구 삭제(Zero-Retention)됩니다.`;
+    const message = `⚠️ [개인정보 식별 알림]\n\n사진 또는 관찰 내용에서 다음 식별정보가 감지되었습니다:\n👉 [ ${categories.join(', ') || '개인 식별정보'} ]\n\n현재 픽셀 단위 마스킹 기능은 준비 중으로 개인정보 보호 규약에 따라 작업이 취소되고 임시 사진이 안전하게 파기됩니다.`;
 
     alert(message);
-    this.setPipelineProgress(0, '개인정보 보호를 위해 작업이 취소되고 임시 사진이 안전 삭제되었습니다.', '취소 완료');
+    this.setPipelineProgress(0, '개인정보 보호를 위해 작업이 취소되고 임시 사진이 안전하게 파기되었습니다.', '취소 완료');
     await api.piiAction(jobId, 'cancel_and_purge');
     this.isProcessing = false;
     this.updateControls();
@@ -680,12 +702,23 @@ export class StudioApp {
       const resultData = await api.getJobResult(this.currentJobId);
 
       if (resultData.draft) {
+        let draft = resultData.draft.trim();
+        let extractedTitle = '';
+        const titleMatch = draft.match(/^(?:#\s*|제목\s*:\s*)([^\n]+)\n*/);
+        if (titleMatch) {
+          extractedTitle = titleMatch[1].replace(/^[[(【\s]+|[\s\])}】]+$/g, '').trim();
+          draft = draft.slice(titleMatch[0].length).trim();
+        }
+        const titleInput = document.getElementById('postTitleInput');
+        if (titleInput && extractedTitle) {
+          titleInput.value = extractedTitle;
+        }
         const area = document.getElementById('postContentArea');
-        if (area) area.value = resultData.draft;
+        if (area) area.value = draft;
         this.renderVisualPreview();
       }
 
-      this.setPipelineProgress(100, `작성이 완료되었습니다! 검토 후 우측 하단 [발행 완료 및 임시 사진 영구 삭제]를 눌러주세요.`, '작성 완료');
+      this.setPipelineProgress(95, `초안 생성이 완료되었습니다. 내용을 검토 및 수정한 뒤 [발행 완료 및 임시 사진 안전 파기]를 눌러주세요.`, '검토 대기');
       const btnFinish = document.getElementById('btnFinishJob');
       if (btnFinish) {
         btnFinish.classList.add('ring-4', 'ring-emerald-300', 'animate-pulse');
@@ -750,24 +783,27 @@ export class StudioApp {
     this.copyPortalFormatted();
   }
 
-  // Finish Job and Zero-Retention Immediate Purge
+  // Finish Job and Safe Immediate Purge
   async finishAndPurgeJob() {
     if (!this.currentJobId) {
       alert('종료할 활성 작업이 없습니다.');
       return;
     }
 
+    const title = document.getElementById('postTitleInput')?.value?.trim() || '';
+    const content = document.getElementById('postContentArea')?.value?.trim() || '';
+
     try {
-      const res = await api.finishJob(this.currentJobId);
+      const res = await api.finishJob(this.currentJobId, { title, content });
       if (res.status === 'completed') {
-        alert('🎉 글 발행 및 임시 사진 안전 삭제 완료!\n\n• 완성된 글 본문이 안전 비공개 저장소에 보관되었습니다.\n• 임시 업로드되었던 사진은 R2에서 즉시 영구 삭제(Zero-Retention)되었습니다.');
+        alert('🎉 글 발행 및 임시 사진 안전 파기 완료!\n\n• 완성된 글 본문이 안전한 비공개 저장소에 보관되었습니다.\n• 임시 업로드되었던 사진은 비공개 저장소에서 안전하게 파기되었습니다.');
         this.currentJobId = null;
         const btnFinish = document.getElementById('btnFinishJob');
         if (btnFinish) {
           btnFinish.classList.remove('ring-4', 'ring-emerald-300', 'animate-pulse');
         }
         await this.refreshSavedPosts();
-        this.setPipelineProgress(0, '새로운 글 작성 작업을 시작할 수 있습니다.', '대기 중');
+        this.setPipelineProgress(100, '글 발행이 완료되었으며 임시 사진이 안전하게 파기되었습니다.', '발행 완료');
       }
     } catch (err) {
       alert('종료 처리 안내: ' + err.message);
