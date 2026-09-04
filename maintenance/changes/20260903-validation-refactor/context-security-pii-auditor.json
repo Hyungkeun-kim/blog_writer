@@ -1,0 +1,21 @@
+{
+  "role": "security-pii-auditor",
+  "change_id": "20260903-validation-refactor",
+  "title": "10대 검증 실패 영역 전면 리팩토링 및 테스트 스위트 확장",
+  "summary": "무인증 401 차단, Canvas 2048px/WebP/Zero-EXIF 전처리, 대화형 PII 경고 및 계속/취소 전이, Workers AI 실호출, Cloudflare Workflows create 복원, R2 마크다운 분리 저장, R2 사후 검증 및 cleanup_pending 재시도, user_settings D1 영속화, 10,000 Neurons 일일 쿼터 및 모바일 390px 완벽 반응형 UI 구현 완료",
+  "target_files": [
+    "src/index.ts",
+    "src/workflow.ts",
+    "src/services/jobService.ts",
+    "src/services/imageService.ts",
+    "public/js/app.js",
+    "public/index.html",
+    "tests/auth-guard.test.mjs",
+    "tests/image-preprocessing.test.mjs",
+    "tests/r2-cleanup-pending.test.mjs",
+    "tests/user-settings-d1.test.mjs"
+  ],
+  "candidate_hash": "sha256:382cabe8be11dc5262605a232a86e2ac362804ecaa5d4962404fde33f909c18f",
+  "policy": {},
+  "created_at": "2026-09-03T07:25:04.242Z"
+}

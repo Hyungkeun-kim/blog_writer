@@ -1,0 +1,15 @@
+{
+  "role": "security-pii-auditor",
+  "change_id": "20260903-url-style-learning",
+  "title": "URL 링크 기반 블로그 문체 학습 신규 기능 구현 및 검증",
+  "summary": "외부 블로그 URL 링크를 통해 본문 텍스트를 추출하고 SSRF 방지 및 정제 과정을 거쳐 Workers AI(Gemma 4 26B IT)로 문체를 분석·학습하여 사용자 문체 프로필에 반영하는 온디맨드 문체 학습 파이프라인 추가",
+  "target_files": [
+    "src/services/styleService.ts",
+    "src/index.ts",
+    "src/workflow.ts",
+    "tests/style-learning.test.mjs"
+  ],
+  "candidate_hash": "sha256:cf57a59f537fa13f95082536145585eb77192a3905c46abc71d6ef457b06eaa0",
+  "policy": {},
+  "created_at": "2026-09-03T06:46:14.312Z"
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "blog-writer-backend",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-02-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "blog-writer-db",
+      "database_id": "blog-writer-local-db"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "R2_BUCKET",
+      "bucket_name": "blog-writer-photos"
+    }
+  ],
+  "workflows": [
+    {
+      "name": "blog-writer-workflow",
+      "binding": "BLOG_WRITER_WORKFLOW",
+      "class_name": "BlogWriterWorkflow"
+    }
+  ],
+  "vars": {
+    "ENVIRONMENT": "development",
+    "MAX_IMAGE_BYTES": 10485760,
+    "EXPIRATION_HOURS": 24
+  },
+  "triggers": {
+    "crons": ["0 * * * *"]
+  }
+}

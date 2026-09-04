@@ -1,0 +1,19 @@
+{
+  "version": "1.0.0",
+  "project": "blog_writer",
+  "rules": {
+    "cr1_server_only_state": true,
+    "cr2_pii_immediate_deletion": true,
+    "cr3_low_cost_workers_ai": true,
+    "cr4_user_explicit_finish": true
+  },
+  "required_roles_for_release": [
+    "orchestrator",
+    "system-architect",
+    "security-pii-auditor",
+    "workflow-ai-implementer",
+    "technical-qa"
+  ],
+  "max_context_packet_bytes": 32768,
+  "max_image_retention_hours": 24
+}

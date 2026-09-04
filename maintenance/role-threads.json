@@ -1,0 +1,31 @@
+{
+  "version": "1.0.0",
+  "project": "blog_writer",
+  "threads": {
+    "orchestrator": {
+      "role": "Orchestrator",
+      "description": "작업 수립, 역할 할당 및 전체 파이프라인 조율",
+      "active_session": null
+    },
+    "system-architect": {
+      "role": "System Architect",
+      "description": "CR-1 서버 전용 상태 머신, DB 스키마, 멱등성 및 API 무결성 검증",
+      "active_session": null
+    },
+    "security-pii-auditor": {
+      "role": "Security & PII Auditor",
+      "description": "CR-2 PII 탐지 규칙, 즉시 삭제 및 암호화 키 격리 검증",
+      "active_session": null
+    },
+    "workflow-ai-implementer": {
+      "role": "Workflow & AI Implementer",
+      "description": "Cloudflare Workers, Workflows, Workers AI, R2 구현",
+      "active_session": null
+    },
+    "technical-qa": {
+      "role": "Technical QA & Release Gate",
+      "description": "단위/통합 테스트 검증 및 릴리스 게이트 심사",
+      "active_session": null
+    }
+  }
+}

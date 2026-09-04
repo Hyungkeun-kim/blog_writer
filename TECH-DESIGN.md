@@ -1,224 +1,316 @@
-# TECH_DESIGN v2.1 - 실행 가능한 코드
+# blog_writer 기술 설계 v3.0
 
-## 1. R2 Presigned PUT - 올바른 패키지
+**상태:** TARGET · 미구현 항목 포함
+
+이 문서는 구현 계약이다. 현재 Cloudflare 단일 Worker 코드는 일부 구성요소만 구현하며 Firebase Authentication과 Cloud Run BFF를 포함한 v3 전체 구현이 아니다.
+
+## 1. 구성요소
+
+```text
+Browser
+  ├─ Firebase Auth SDK
+  ├─ image normalizer
+  └─ BFF API client
+        ↓ HTTPS + Firebase ID token
+Cloud Run BFF
+  ├─ Firebase token verifier
+  ├─ OWNER_EMAILS authorization
+  ├─ request validation/rate limit
+  └─ Worker service client
+        ↓ HTTPS + internal service token
+Cloudflare Worker
+  ├─ D1 repository
+  ├─ R2 repository
+  ├─ Workers AI client
+  └─ Workflows binding
+```
+
+### 저장 책임
+
+| 구성요소 | 책임 |
+|---|---|
+| D1 | Job·slot 메타데이터, 상태, 설정, 설정 snapshot, usage event/일별 집계, 최종 글 메타데이터 |
+| R2 jobs/images | 정규화 이미지 |
+| R2 jobs/temp | Vision·Writer·Quality 결과와 최종 후보 |
+| R2 posts | 최종 Markdown |
+
+D1에는 사진 바이트, AI 중간 본문 또는 최종 Markdown 본문을 저장하지 않는다.
+
+## 2. 인증 계약
+
+### Browser → BFF
+
+- `Authorization: Bearer <Firebase ID token>`
+- BFF는 Firebase Admin SDK로 token을 검증한다.
+- `iss`, `aud`, `exp`, `email_verified`를 확인한다.
+- token의 이메일이 `OWNER_EMAILS` exact allowlist에 없으면 403이다.
+- owner ID는 검증된 Firebase UID로 결정한다.
+
+### BFF → Worker
+
+- BFF는 Secret Manager의 회전 가능한 내부 service token을 사용한다.
+- Worker는 내부 token을 상수 시간 비교하고 누락·불일치를 401로 거부한다.
+- 외부 요청의 owner ID, object key와 상태를 신뢰하지 않는다.
+- 허용 origin만 CORS에 등록하며 `*`와 credential 조합을 사용하지 않는다.
+
+기본 PIN, 공개 token, `startsWith` 인증과 localStorage fallback token은 금지한다.
+
+## 3. 공개 API와 내부 API
+
+아래 공개 API는 Cloud Run BFF가 제공한다. Worker endpoint는 동일 기능의 내부 계약이며 인터넷 클라이언트가 직접 호출할 수 없다.
+
+```text
+POST   /api/jobs
+PUT    /api/jobs/{jobId}/photos/{slotId}
+POST   /api/jobs/{jobId}/start
+POST   /api/jobs/{jobId}/pii-decision
+GET    /api/jobs/{jobId}
+GET    /api/jobs/{jobId}/result
+POST   /api/jobs/{jobId}/confirm-final
+POST   /api/jobs/{jobId}/cancel
+
+GET    /api/posts
+GET    /api/posts/{postId}
+DELETE /api/posts/{postId}
+
+GET    /api/settings
+PUT    /api/settings
+GET    /api/usage?date=YYYY-MM-DD
+```
+
+공통 규칙:
+
+- BFF가 owner ID를 내부 요청에 주입한다.
+- 생성·결정·확정·취소에는 idempotency key를 요구한다.
+- 오류 응답은 `code`, 일반 사용자용 한국어 `message`, 선택적 `retryable`만 반환한다.
+- 내부 stack, D1/R2 이름, object key와 secret을 반환하지 않는다.
+
+### PII 결정 요청
+
+```json
+{
+  "stage": "input",
+  "decision": "continue",
+  "reviewHash": "sha256:...",
+  "reviewToken": "opaque-one-time-token"
+}
+```
+
+`stage`는 `input | output`, `decision`은 `continue | cancel_and_purge`만 허용한다.
+
+- 입력 review token은 Job, owner, Vision 병합 artifact의 `observation_hash`와 만료에 연결한다.
+- 출력 review token은 Job, owner, 출력 후보의 `candidate_hash`와 만료에 연결한다.
+- token은 한 번만 사용한다.
+- 출력 `continue`는 편집 payload 또는 위험 acknowledgement를 받아 재검사하고 새 candidate hash를 발급한 뒤 `waiting(final_review)`로 전환한다.
+
+### 최종 저장 요청
+
+```json
+{
+  "candidateHash": "sha256:...",
+  "acknowledged": true,
+  "piiAcknowledged": false,
+  "title": "...",
+  "body": "...",
+  "tags": ["..."]
+}
+```
+
+요청 본문 hash가 candidate hash와 다르면 새 PII 검사와 사용자 확인을 요구한다.
+
+## 4. 이미지 정규화와 검증
+
+### 브라우저
+
+1. JPEG/PNG/WebP 파일을 디코딩한다.
+2. EXIF orientation을 반영한다.
+3. 비율을 유지하며 긴 변을 최대 2048px로 줄인다.
+4. Canvas에서 WebP 품질 0.82로 재인코딩한다.
+5. 원본 파일명과 metadata 없이 Blob만 BFF에 전송한다.
+6. 처리 직후 object URL과 원본 참조를 해제한다.
+
+### BFF/Worker
+
+- 인증과 Job·slot 소유권을 확인한다.
+- 전송 크기는 10MiB 이하만 허용한다.
+- MIME header와 WebP magic bytes가 모두 일치해야 한다.
+- 실제 이미지 디코딩에 성공하고 긴 변이 2048px 이하인지 확인한다.
+- EXIF/XMP/ICC 등 허용하지 않은 metadata chunk가 있으면 거부한다.
+- 서버가 생성한 object key에만 조건부 저장한다.
+- 검증된 바이트 checksum을 D1에 기록하고 같은 바이트를 Vision에 전달한다.
+
+객체 키:
+
+```text
+users/{ownerId}/jobs/{jobId}/images/slot_{slotId}.webp
+users/{ownerId}/jobs/{jobId}/temp/{artifactId}
+users/{ownerId}/posts/{postId}.md
+```
+
+## 5. 상태와 데이터 모델
 
 ```ts
-// Correct: @aws-sdk/s3-request-presigner (not s3-presigner)
-import { S3Client } from "@aws-sdk/client-s3"
-import { PutObjectCommand } from "@aws-sdk/client-s3"
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
+type JobStatus =
+  | "waiting"
+  | "processing"
+  | "reupload_required"
+  | "completed"
+  | "failed"
 
-const s3 = new S3Client({
-  region: "auto",
-  endpoint: `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  credentials: { accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY },
-})
-
-export async function createPresignedPut(env: Env, userId: string, jobId: string, slotId: number) {
-  const key = `users/${userId}/jobs/${jobId}/slot_${slotId}.jpg` // 서버 생성, 정확한 prefix 검증
-  if (!key.startsWith(`users/${userId}/jobs/${jobId}/`)) throw new Error("invalid prefix")
-  
-  const command = new PutObjectCommand({
-    Bucket: env.R2_BUCKET_NAME, // string, not R2Bucket binding
-    Key: key,
-    ContentType: "image/jpeg",
-    // @ts-ignore 제거, IfNoneMatch 조건부
-  })
-  // IfNoneMatch: "*" 서명에 포함
-  const url = await getSignedUrl(s3, command, { 
-    expiresIn: 600,
-  })
-  // 헤더는 클라이언트가 그대로 전송해야 함: If-None-Match: *, Content-Type: image/jpeg
-  return { key, url }
-}
-
-// 검증 - 클라이언트 선언만으로 인정 안함
-export async function verifyUploadedObject(env: Env, slot: UploadSlot) {
-  const obj = await env.R2_BUCKET.head(slot.key)
-  if (!obj) throw new Error("not found")
-  if (!slot.key.startsWith(`users/${slot.user_id}/jobs/${slot.job_id}/`)) throw new Error("path mismatch")
-  if (obj.size > 10 * 1024 * 1024) throw new Error("too large")
-  if (!["image/jpeg","image/png","image/webp"].includes(obj.httpMetadata?.contentType || "")) throw new Error("invalid type")
-  // magic bytes + 디코딩 검증 - Cloudflare Images binding 사용
-  const image = await env.R2_BUCKET.get(slot.key)
-  const bytes = await image.arrayBuffer()
-  if (!isValidImage(bytes)) throw new Error("decode failed") // 실제 디코딩 검증
-  return true
-}
+type WaitingReason =
+  | "upload"
+  | "pii_review"
+  | "final_review"
+  | null
 ```
-참고: https://developers.cloudflare.com/r2/api/s3/presigned-urls/
 
-## 2. Workflows - 평탄화 + 병렬 + PII 차단
+주요 Job 필드:
+
+```text
+id, owner_id, idempotency_key, status, waiting_reason,
+progress_stage, failure_code, cleanup_pending, expires_at,
+observation_hash, candidate_hash, pii_warning_categories, pii_ack_required,
+pii_acknowledged_at, final_acknowledged_at, settings_snapshot
+```
+
+- `pii_warning_categories`에는 enum code만 저장하고 원문과 위치 문자열을 저장하지 않는다.
+- `settings_snapshot`은 Job 생성 시 확정하며 이후 사용자 설정 변경의 영향을 받지 않는다.
+- 모든 전이는 expected status와 waiting reason을 조건으로 하는 compare-and-set이다.
+- `completed`는 일반 transition 함수가 아니라 finalization 함수만 설정할 수 있다.
+
+## 6. Workflow
+
+```text
+init
+→ vision_slot_{id} (최대 3개 병렬)
+→ merge
+→ pii_input
+   ├─ detected: waiting(pii_review)
+   │    ├─ continue: sanitize → recheck → writer
+   │    └─ cancel: purge → failed
+   └─ clear: writer
+→ quality
+→ pii_output
+   ├─ detected: waiting(pii_review)
+   │    ├─ edit/confirm: recheck → clear 또는 위험 acknowledgement → 새 candidate hash → waiting(final_review)
+   │    └─ cancel: purge → failed
+   └─ clear: waiting(final_review)
+→ confirm-final API
+→ pending final 저장
+→ purge temp
+→ verify purge
+→ completed + visible
+```
+
+- Vision은 사진별 최대 1회 자동 재시도한다.
+- Vision 결과는 구조화 JSON schema로 검증한다.
+- Writer와 Quality는 서로 다른 단계로 실제 모델을 호출한다.
+- PII 대기 이후 resume은 원래 Workflow instance와 Job checkpoint를 사용한다. 전체 파이프라인을 처음부터 재실행하지 않는다.
+- continue 시 모든 탐지 범주에 대응하는 sanitizer를 적용하고 재검사 실패 시 다음 단계로 이동하지 않는다.
+- output PII가 남은 최종 후보는 경고와 함께 소유자에게만 제공한다.
+- 출력 PII 검토 후 편집 또는 위험 확인 요청은 저장 직전 재검사를 수행하고, 새 candidate hash를 발급한 뒤 `waiting(final_review)`로 전환한다.
+- 사진, 프롬프트와 결과 본문은 Workflow step 이름·로그·payload에 넣지 않고 R2 artifact reference와 hash만 전달한다.
+
+## 7. AI 모델
+
+서버 allowlist:
+
+| 역할 | 기본 | 대안 |
+|---|---|---|
+| Vision | Llama 3.2 Vision | Llama 4 Scout |
+| Writer | Gemma 4 | GLM 4.7 Flash |
+| Quality | Gemma 4 | GLM 4.7 Flash |
+
+- 실제 Cloudflare 모델 ID는 배포 시 지원 여부를 검증한 allowlist 상수로 관리한다.
+- Vision prompt는 관찰 가능한 대상·행동·장소·보이는 문자만 요청한다.
+- 이름, 감정, 성격, 건강·발달과 가족관계를 추론하지 않는다.
+- Writer와 Quality에는 PII 검사를 통과한 파생 텍스트만 전달한다.
+- Claude와 기타 외부 provider 경로는 비활성화한다.
+
+## 8. 최종화와 삭제
 
 ```ts
-// 올바른 순서: step.do(name, config, callback)
-import { WorkflowEntrypoint, WorkflowStep, WorkflowEvent } from 'cloudflare:workers'
+async function finalizeByOwner(input: FinalizeInput) {
+  const job = await lockOwnedJob(input.ownerId, input.jobId)
+  assertWaiting(job, "final_review")
+  assertAcknowledgement(input)
+  assertCandidateHash(job, input)
+  await recheckFinalPayload(input)
 
-type Params = { jobId: string; userId: string }
+  const markdownKey = await putPendingMarkdown(input)
+  const postId = await insertPendingPostMetadata(markdownKey)
 
-export class BlogWriterWorkflow extends WorkflowEntrypoint<Env, Params> {
-  async run(event: WorkflowEvent<Params>, step: WorkflowStep) {
-    const { jobId, userId } = event.payload
-    
-    // init
-    const slots = await step.do('init', { retries: { limit: 2 } }, async () => {
-      return getUploadSlots(jobId) // Supabase에서 조회
-    })
+  await purgeExactTemporaryObjects(job)
+  await assertNoTemporaryArtifactsRemain(job)
 
-    // Vision - 최상위 반복문 평탄화, 병렬 3개, 결정적 이름 vision_slot_{id}
-    const visionResults = []
-    const parallelLimit = 3
-    for (let i=0; i<slots.length; i+=parallelLimit) {
-      const batch = slots.slice(i, i+parallelLimit)
-      const batchResults = await Promise.all(batch.map(slot => 
-        step.do(`vision_slot_${slot.slot_id}`, { retries: { limit: 3, delay: "5 second" } }, async () => {
-          const base64 = await getR2Base64(env.R2_BUCKET, slot.key) // 구현
-          const res = await env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
-            image: base64,
-            prompt: "관찰 가능한 행동만 기술, 이름/성격/감정 추론 금지",
-            max_tokens: 512,
-          })
-          return validateVisionJson(res) // JSON 스키마 검증 + 재시도
-        })
-      ))
-      visionResults.push(...batchResults)
-    }
-
-    const merged = await step.do('merge', async () => mergeObservations(visionResults))
-
-    // PII 검사 1 - Claude 보내기 전
-    const piiInput = await step.do('pii_check_input', async () => detectPII(merged))
-    if (piiInput.requiresReview) {
-      await step.do('needs_review_input', async () => {
-        await savePiiReason(jobId, piiInput) // 원문 저장 금지, 유형·위치·사유 코드만
-        await transitionJob(jobId, 'needs_review') // RPC 내부에서 허용 전이 검증
-      })
-      return // Writer, finalize 실행 안함
-    }
-
-    const draft = await step.do('writer_running', { retries: { limit: 2 } }, async () => {
-      return callClaude(env, merged) // 실제 Claude 호출
-    })
-
-    const verified = await step.do('quality_running', { retries: { limit: 2 } }, async () => {
-      return qualityEditor(env, draft)
-    })
-
-    // PII 검사 2 - 저장 전
-    const piiOutput = await step.do('pii_check_output', async () => detectPII(verified))
-    if (piiOutput.requiresReview) {
-      await step.do('needs_review_output', async () => {
-        await savePiiReason(jobId, piiOutput)
-        await transitionJob(jobId, 'needs_review')
-      })
-      return
-    }
-
-    await step.do('finalize', async () => saveResult(jobId, verified))
-  }
-}
-
-function validateVisionJson(res: any) {
-  // 실제 구현: JSON Schema 검증, 실패 시 throw로 재시도 유도
-  if (!res.observations) throw new Error("invalid vision json")
-  return res
-}
-
-function detectPII(text: string): { requiresReview: boolean; items: any[]; reason: string; confidence: number } {
-  // 로컬 규칙, AI 모델로 이름 전송 금지, childNames는 payload에 넣지 않음
-  // 이름 목록은 로컬 후처리에서만 사용
-  const items = [] // 유형·위치 탐지
-  return { requiresReview: items.length>0, items, reason: "name_detected", confidence: 0.9 }
-}
-
-async function callClaude(env: Env, prompt: string) {
-  // provider-native 단일 경로, max_tokens 필수
-  const res = await fetch(`https://gateway.ai.cloudflare.com/v1/${env.CF_ACCOUNT_ID}/${env.CF_GATEWAY_ID}/anthropic/v1/messages`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'cf-aig-authorization': `Bearer ${env.CF_AIG_TOKEN}`,
-      'anthropic-version': '2023-06-01',
-      'cf-aig-collect-log-payload': 'false',
-    },
-    body: JSON.stringify({
-      model: env.CLAUDE_MODEL, // claude-sonnet-4-5 고정
-      max_tokens: 3000,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  })
-  if (!res.ok) throw new Error(await res.text()) // 에러 처리
-  const data = await res.json()
-  return data.content[0].text
-}
-
-async function getR2Base64(bucket: R2Bucket, key: string) {
-  const obj = await bucket.get(key)
-  if (!obj) throw new Error("not found")
-  const buf = await obj.arrayBuffer()
-  return Buffer.from(buf).toString('base64')
-}
-
-async function saveResult(jobId: string, verified: any) {
-  // Supabase 저장 구현
+  await completeJobAndExposePostInOneD1Transaction(job.id, postId)
 }
 ```
-참고: https://developers.cloudflare.com/workflows/
 
-## 3. pgvector 마이그레이션
+- D1 post metadata에는 `id, owner_id, title, summary, r2_markdown_key, status, created_at`만 저장한다.
+- 삭제 오류가 있으면 `cleanup_pending=true`를 유지하고 completed로 전환하지 않는다.
+- cleanup은 지수 backoff로 재시도한다.
+- 최종 글 DELETE는 R2 Markdown 삭제, D1 metadata 삭제와 잔존 확인을 멱등하게 수행한다.
 
-```sql
--- 1. 새 컬럼 추가
-alter table style_examples add column embedding_v2 vector(1024);
+## 9. 만료
 
--- 2. 배치 Worker 재임베딩 (Workers AI BGE-M3, bge_m3_embedding() 미정의 함수 사용 안함)
--- Worker 코드에서 직접 임베딩 생성 후 update
+- Job의 `expires_at`은 `min(created_at + retentionHours, created_at + 24h)`로 생성하며 상태 변경으로 연장하지 않는다.
+- 정규화 이미지, 임시 artifact와 PII 임시 필드는 Job 절대 만료를 넘지 않는다.
+- Workflow는 가장 이른 `expires_at` 전에 deadline cleanup을 예약한다.
+- 최소 시간 단위 Cron이 누락된 Job과 `cleanup_pending`을 재처리한다.
+- R2 Lifecycle은 최종 안전망으로 설정한다.
+- 만료된 `waiting`, `processing`, `reupload_required` Job은 모두 `failed(SOURCE_EXPIRED)`로 바꾸고 임시 데이터와 PII 임시 필드를 제거한다.
+- cleanup과 취소는 사용량 한도와 관계없이 항상 실행한다.
 
--- 3. 100% 완료 검증
-select count(*) from style_examples where embedding_v2 is null and approved_for_learning = true;
+배포 게이트는 Worker scheduled handler의 존재뿐 아니라 실제 Cron trigger와 R2 Lifecycle 설정도 확인한다.
 
--- 4. HNSW 인덱스
-create index on style_examples using hnsw (embedding_v2 vector_cosine_ops);
-
--- 5. 검색 RPC 전환
-create or replace function match_style_examples(query_embedding vector(1024), match_threshold float, match_count int)
-returns table(id uuid, content text, similarity float)
-language plpgsql security invoker -- INVOKER 검토, DEFINER 필요 시 search_path='' + REVOKE
-set search_path = ''
-as $$
-begin
-  return query
-  select se.id, se.content, 1 - (se.embedding_v2 <=> query_embedding) as similarity
-  from public.style_examples se
-  where se.user_id = auth.uid() and se.approved_for_learning = true and 1 - (se.embedding_v2 <=> query_embedding) > match_threshold
-  order by se.embedding_v2 <=> query_embedding limit match_count;
-end; $$;
-
--- 6. 7일간 롤백 유지, 7. 검증 후 기존 컬럼 삭제
-```
-
-## 4. OpenNext Custom Worker
+## 10. 설정
 
 ```ts
-// Correct import
-import { default as handler } from "./.open-next/worker.js";
-
-export default {
-  fetch: handler.fetch,
-  async scheduled(event, env, ctx) {
-    // 삭제 작업, 페이지네이션·부분 실패 재시도·멱등성 추가
-    // 매시간 실행, 원본 24시간, PII 메타 7일, 중간 즉시 삭제
-  }
+type UserSettings = {
+  retentionHours: number       // 1..24
+  maxImageBytes: 5242880 | 10485760
+  visionModel: AllowedVisionModel
+  writerModel: AllowedWritingModel
+  qualityModel: AllowedWritingModel
+  maxOutputTokens: number      // 서버 지정 범위
+  parallelVisionSlots: 1 | 2 | 3
 }
 ```
-참고: https://opennext.js.org/cloudflare/howtos/custom-worker
 
-## 5. 비용 - 실측 전이므로 PENDING
+- PUT은 위 키만 허용하고 unknown key를 400으로 거부한다.
+- 모델 ID와 숫자 범위는 서버에서 검증한다.
+- 환경, binding, owner allowlist, service token과 PII 우회 옵션은 설정 API 대상이 아니다.
+- 화면에는 사용자가 이해하기 쉬운 이름을 표시하고 기술 ID는 보조 설명으로만 제공한다.
+- secret 상태는 `configured | missing`과 마스킹된 suffix만 표시한다.
 
-- Workers AI: 3128 neurons/case estimated × 500건 × 30일 = 46.92M → $516.12 (무료 제외 전), 무료 10k/일 제외 시 $506
-- Claude: 별도, Writer + Quality 각 2000 tokens
-- Workflows: 500k steps 포함, 14 steps/case × 500 × 30 = 210k → 초과 $0, CPU·요청 별도
-- R2: 3MB×8장×500×30일 = 351GB 근거 명시
-- Supabase: 임의 산식 제거, 공식 가격 적용
-- 100건 실측 후 P50/P95, 일 100/500/1000건, 기본요금, 무료 전후, 월 총비용+20% 예비비 제시
-- 링크: https://developers.cloudflare.com/workflows/reference/pricing/
+## 11. 사용량
+
+```text
+ai_usage_events:
+  id, owner_id, job_id, utc_date, model_id, stage,
+  input_tokens, output_tokens, neurons, measurement(actual|estimated)
+```
+
+- 실제 provider usage가 있으면 `actual`, 없으면 문서화된 계산식에 따른 `estimated`로 구분한다.
+- `GET /api/usage?date=YYYY-MM-DD`는 해당 UTC 날짜만 집계한다.
+- 응답에는 모델·단계별 값, 합계, 10,000 neurons 참고 한도, 비율과 마지막 갱신 시각을 포함한다.
+- 70%는 주의, 90%는 강한 경고이며 자동 차단하지 않는다.
+- 실제 청구와 무료 할당은 Cloudflare Dashboard가 최종 기준이라는 안내를 함께 표시한다.
+
+## 12. 현재 구현과의 차이
+
+다음은 v3 구현 완료 조건이며 현재 코드에서 미완료다.
+
+- Firebase Authentication과 Cloud Run BFF
+- Worker 직접 호출 차단과 안전한 내부 service token
+- 서버의 WebP 실제 디코딩·치수·metadata 검증
+- 단일 Workflow 기반 PII pause/resume
+- 모든 PII 범주 sanitizer와 저장 전 acknowledgement/hash 검증
+- 임시 artifact 및 최종 본문의 R2 전용 저장
+- 배포 Cron과 R2 Lifecycle 검증
+- 설정 allowlist·Job snapshot
+- 실제 UTC 일별 usage와 70%·90% 경고
+- 문체 학습·외부 URL 수집 UI/API 비활성화
+
+현재 코드와 화면이 동작한다는 사실만으로 이 TARGET 계약을 통과한 것으로 간주하지 않는다.

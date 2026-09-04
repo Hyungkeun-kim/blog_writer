@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "change_id": "YYYYMMDD-change-name",
+  "title": "작업 제목",
+  "summary": "작업 내용 요약",
+  "candidate_hash": "sha256:...",
+  "target_files": [
+    "src/index.ts"
+  ],
+  "verdicts": {
+    "orchestrator": {
+      "status": "PASS",
+      "updated_at": "YYYY-MM-DDTHH:mm:ssZ",
+      "reason": "작업 범위 및 하네스 계획 승인"
+    },
+    "system-architect": {
+      "status": "PENDING",
+      "updated_at": null,
+      "reason": null
+    },
+    "security-pii-auditor": {
+      "status": "PENDING",
+      "updated_at": null,
+      "reason": null
+    },
+    "workflow-ai-implementer": {
+      "status": "PENDING",
+      "updated_at": null,
+      "reason": null
+    },
+    "technical-qa": {
+      "status": "PENDING",
+      "updated_at": null,
+      "reason": null
+    }
+  }
+}
