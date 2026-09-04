@@ -198,6 +198,88 @@ export class BlogWriterWorkflow extends WorkflowEntrypoint<Env, WorkflowParams> 
   }
 }
 
+interface AiChoice {
+  message?: {
+    content?: string
+  }
+}
+
+interface AiResponseLike {
+  response?: string
+  choices?: AiChoice[]
+  result?: AiResponseLike
+}
+
+function extractAiText(aiRes: unknown): string {
+  if (!aiRes) return ""
+  if (typeof aiRes === "string") return aiRes.trim()
+  const obj = aiRes as AiResponseLike
+  if (typeof obj.response === "string" && obj.response.trim().length > 0) {
+    return obj.response.trim()
+  }
+  if (Array.isArray(obj.choices) && obj.choices[0]?.message?.content) {
+    return obj.choices[0].message.content.trim()
+  }
+  if (obj.result) {
+    return extractAiText(obj.result)
+  }
+  return ""
+}
+
+async function executeAiModel(
+  env: Env,
+  model: string,
+  inputs: Record<string, unknown>,
+  timeoutMs = 25000,
+): Promise<string> {
+  // 1. Try env.AI binding first (with timeout)
+  if (env.AI) {
+    try {
+      const bindingPromise = env.AI.run(model, inputs)
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("AI_BINDING_TIMEOUT")), timeoutMs),
+      )
+      const res = await Promise.race([bindingPromise, timeoutPromise])
+      const text = extractAiText(res)
+      if (text) return text
+    } catch {
+      // Fall through to direct REST API if binding fails or times out
+    }
+  }
+
+  // 2. Direct Cloudflare AI REST API Fallback
+  const token = env.CLOUDFLARE_API_TOKEN
+  const accountId = env.CLOUDFLARE_ACCOUNT_ID
+  if (token && accountId) {
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), timeoutMs)
+      const resp = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(inputs),
+          signal: controller.signal,
+        },
+      )
+      clearTimeout(timer)
+      if (resp.ok) {
+        const json: unknown = await resp.json()
+        const text = extractAiText(json)
+        if (text) return text
+      }
+    } catch {
+      // Return empty if REST API also fails
+    }
+  }
+
+  return ""
+}
+
 /**
  * Direct Fallback Pipeline Runner (for Local Dev & Resilient Execution)
  */
@@ -230,15 +312,15 @@ export async function runDirectWorkflowPipeline(
       let obs = ""
       try {
         const r2Obj = await env.R2_BUCKET.get(slot.object_key)
-        if (r2Obj && env.AI && canRunRemoteAi) {
+        if (r2Obj && canRunRemoteAi) {
           const buffer = await r2Obj.arrayBuffer()
-          const aiRes = await env.AI.run("@cf/meta/llama-3.2-11b-vision-instruct", {
+          const text = await executeAiModel(env, "@cf/meta/llama-3.2-11b-vision-instruct", {
             image: [...new Uint8Array(buffer)],
             prompt: "Describe only visible actions, subjects, and objects in Korean. Do not infer emotions or names.",
             max_tokens: 150,
           })
-          if (aiRes.response) {
-            obs = `아이${slot.slot_id + 1}: ${aiRes.response}`
+          if (text) {
+            obs = `아이${slot.slot_id + 1}: ${text}`
             totalNeurons += 190 // ~6504 vision tokens approx 190 neurons
           }
         }
@@ -295,8 +377,8 @@ export async function runDirectWorkflowPipeline(
 
     let draftText = ""
     try {
-      if (env.AI && canRunRemoteAi) {
-        const aiRes = await env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
+      if (canRunRemoteAi) {
+        const text = await executeAiModel(env, "@cf/google/gemma-4-26b-a4b-it", {
           messages: [
             {
               role: "user",
@@ -305,8 +387,8 @@ export async function runDirectWorkflowPipeline(
           ],
           max_completion_tokens: 1500,
         })
-        if (aiRes.response) {
-          draftText = aiRes.response
+        if (text) {
+          draftText = text
           totalNeurons += 120 // ~1200 tokens
         }
       }
@@ -336,8 +418,8 @@ export async function runDirectWorkflowPipeline(
 
     let polishedDraft = draftText
     try {
-      if (env.AI && canRunRemoteAi) {
-        const qualityRes = await env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
+      if (canRunRemoteAi) {
+        const qualityText = await executeAiModel(env, "@cf/google/gemma-4-26b-a4b-it", {
           messages: [
             {
               role: "user",
@@ -346,8 +428,8 @@ export async function runDirectWorkflowPipeline(
           ],
           max_completion_tokens: 1500,
         })
-        if (qualityRes.response) {
-          polishedDraft = qualityRes.response
+        if (qualityText) {
+          polishedDraft = qualityText
           totalNeurons += 100
         }
       }

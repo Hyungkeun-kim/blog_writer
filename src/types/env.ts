@@ -21,6 +21,7 @@ export interface Env {
   EXPIRATION_HOURS: number
   APP_ACCESS_TOKEN?: string
   CLOUDFLARE_API_TOKEN?: string
+  CLOUDFLARE_ACCOUNT_ID?: string
   INTERNAL_SERVICE_TOKEN?: string
   OWNER_EMAILS?: string
   OWNER_UIDS?: string

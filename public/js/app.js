@@ -614,8 +614,8 @@ export class StudioApp {
       // Step 4: Polling Status
       let attempts = 0;
       let finished = false;
-      while (attempts < 35 && !finished) {
-        await new Promise((r) => setTimeout(r, 1200));
+      while (attempts < 60 && !finished) {
+        await new Promise((r) => setTimeout(r, 1500));
         attempts++;
         const statusData = await api.getJob(this.currentJobId);
         if (statusData.job) {
@@ -636,12 +636,16 @@ export class StudioApp {
           } else {
             const stage = statusData.job.progress_stage || 'ai_processing';
             this.setPipelineProgress(
-              Math.min(95, 60 + attempts),
+              Math.min(94, 60 + Math.floor(attempts / 2)),
               `3/4. 인공지능 맞춤 작성 진행 중 (${stage})...`,
               '작성 중',
             );
           }
         }
+      }
+
+      if (!finished) {
+        throw new Error("인공지능 모델 처리 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.");
       }
 
       // Step 5: Load Draft Result
