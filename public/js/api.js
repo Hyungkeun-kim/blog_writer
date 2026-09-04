@@ -213,6 +213,13 @@ export class BlogWriterApi {
     return this._request(`/api/posts/${postId}/content`);
   }
 
+  // 10-2. Delete Published Post
+  async deletePost(postId) {
+    return this._request(`/api/posts/${postId}`, {
+      method: 'DELETE',
+    });
+  }
+
   // 11. Environment Settings
   async getSettings() {
     return this._request('/api/settings');

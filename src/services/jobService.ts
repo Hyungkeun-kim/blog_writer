@@ -282,6 +282,34 @@ export async function finalizeJobByUser(
     .bind(postId, jobId, userId, title, content, r2MarkdownKey, summary)
     .run()
 
+  // 3-1. Preserve published post photos in R2 under post directory
+  const slots = await env.DB.prepare(
+    "SELECT slot_id, object_key FROM upload_slots WHERE job_id = ? ORDER BY slot_id ASC",
+  )
+    .bind(jobId)
+    .all<{ slot_id: number; object_key: string }>()
+
+  for (const slot of slots.results || []) {
+    try {
+      const slotObj = await env.R2_BUCKET.get(slot.object_key)
+      if (slotObj) {
+        const postPhotoKey = `users/${userId}/posts/${postId}/photos/photo_${slot.slot_id}.webp`
+        const buffer = await slotObj.arrayBuffer()
+        await env.R2_BUCKET.put(postPhotoKey, buffer, {
+          httpMetadata: { contentType: "image/webp" },
+          customMetadata: {
+            userId,
+            postId,
+            slotId: String(slot.slot_id),
+            createdAt: new Date().toISOString(),
+          },
+        })
+      }
+    } catch {
+      // Best effort photo copy
+    }
+  }
+
   // 4. Zero-Retention: Purge R2 Photos and Temp Artifacts with strict assertion
   await purgeJobR2AndTempData(env, userId, jobId)
 

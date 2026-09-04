@@ -13,6 +13,8 @@ export class StudioApp {
     this.currentJobId = null;
     this.isProcessing = false;
     this.savedPosts = [];
+    this.currentPost = null;
+    this.currentPostPhotos = [];
     this.activeEditorTab = 'preview'; // 'preview' or 'edit'
 
     this.init();
@@ -325,6 +327,8 @@ export class StudioApp {
   clearAllSlots() {
     this.selectedFiles.forEach((p) => URL.revokeObjectURL(p.previewUrl));
     this.selectedFiles = [];
+    this.currentPost = null;
+    this.currentPostPhotos = [];
     this.renderPhotoList();
     this.updateControls();
     this.renderVisualPreview();
@@ -519,6 +523,7 @@ export class StudioApp {
           const slotNum = parseInt(photoMarkerMatch[1], 10);
           const photoIndex = slotNum - 1;
           const photo = this.selectedFiles[photoIndex];
+          const savedPhotoUrl = this.currentPostPhotos && this.currentPostPhotos[photoIndex];
 
           if (photo) {
             return `
@@ -534,6 +539,24 @@ export class StudioApp {
                   </div>
                 </div>
                 <p class="text-[11px] text-slate-500 text-center font-medium">▲ [사진 ${slotNum}] 배치 위치</p>
+              </div>
+            `;
+          } else if (savedPhotoUrl) {
+            const token = api.getToken();
+            const authedUrl = token ? `${savedPhotoUrl}?token=${encodeURIComponent(token)}` : savedPhotoUrl;
+            return `
+              <div class="my-4 p-2.5 bg-slate-50 border border-indigo-100 rounded-2xl shadow-2xs space-y-2">
+                <div class="relative rounded-xl overflow-hidden aspect-video bg-slate-200">
+                  <img src="${authedUrl}" alt="사진 ${slotNum}" class="w-full h-full object-cover">
+                  <div class="absolute top-2 left-2 px-2 py-0.5 bg-slate-900/80 backdrop-blur-xs text-white text-[11px] font-bold rounded-md">
+                    📷 본문 삽입 사진 #${slotNum}
+                  </div>
+                  <div class="absolute bottom-2 right-2 px-2 py-0.5 bg-indigo-600/90 text-white text-[10px] font-bold rounded-md flex items-center space-x-1">
+                    <i data-lucide="image" class="w-3 h-3"></i>
+                    <span>보관된 사진</span>
+                  </div>
+                </div>
+                <p class="text-[11px] text-slate-500 text-center font-medium">▲ [사진 ${slotNum}]</p>
               </div>
             `;
           } else {
@@ -887,8 +910,14 @@ export class StudioApp {
         narrativeList.innerHTML = sections
           .map((sec, i) => {
             const photoItem = this.selectedFiles[sec.photoIdx] || this.selectedFiles[i];
-            const imgHtml = photoItem
-              ? `<img src="${photoItem.previewUrl}" alt="관찰 사진" class="w-full max-h-48 object-cover rounded-lg border border-slate-300">`
+            const savedPhoto = this.currentPostPhotos && (this.currentPostPhotos[sec.photoIdx] || this.currentPostPhotos[i]);
+            let photoSrc = photoItem ? photoItem.previewUrl : null;
+            if (!photoSrc && savedPhoto) {
+              const token = api.getToken();
+              photoSrc = token ? `${savedPhoto}?token=${encodeURIComponent(token)}` : savedPhoto;
+            }
+            const imgHtml = photoSrc
+              ? `<img src="${photoSrc}" alt="관찰 사진" class="w-full max-h-48 object-cover rounded-lg border border-slate-300">`
               : `<div class="h-32 bg-slate-100 rounded-lg flex items-center justify-center text-xs text-slate-400 border border-dashed border-slate-300">[관찰 사진 #${sec.photoIdx + 1}]</div>`;
 
             return `
@@ -987,9 +1016,14 @@ export class StudioApp {
           <p class="text-[11px] text-slate-600 line-clamp-2 leading-relaxed">${post.summary || post.content?.slice(0, 100) || '내용 없음'}</p>
           <div class="flex items-center justify-between pt-1 border-t border-slate-100">
             <span class="text-[10px] text-indigo-600 font-semibold">${post.tags || '#관찰일지'}</span>
-            <button onclick="app.loadSavedPost('${post.id}')" class="px-2.5 py-1 bg-white hover:bg-indigo-600 hover:text-white text-indigo-600 font-bold text-[11px] rounded-lg border border-indigo-200 transition">
-              에디터로 불러오기
-            </button>
+            <div class="flex items-center space-x-2">
+              <button onclick="app.deleteSavedPost('${post.id}')" class="px-2 py-1 text-slate-400 hover:text-red-600 hover:bg-red-50 text-[11px] rounded-lg transition" title="삭제">
+                삭제
+              </button>
+              <button onclick="app.loadSavedPost('${post.id}')" class="px-2.5 py-1 bg-white hover:bg-indigo-600 hover:text-white text-indigo-600 font-bold text-[11px] rounded-lg border border-indigo-200 transition">
+                에디터로 불러오기
+              </button>
+            </div>
           </div>
         </div>
       `,
@@ -1008,11 +1042,24 @@ export class StudioApp {
       if (area) area.value = res.content || '';
       if (titleInput && res.title) titleInput.value = res.title;
 
+      this.currentPost = res;
+      this.currentPostPhotos = res.photos || [];
       this.renderVisualPreview();
       this.closePostsDrawer();
-      alert('📖 보관된 글 본문을 에디터로 불러왔습니다.');
+      alert('📖 보관된 글과 사진을 에디터로 불러왔습니다.');
     } catch (err) {
       alert('글 불러오기 오류: ' + err.message);
+    }
+  }
+
+  async deleteSavedPost(postId) {
+    if (!confirm('정말로 이 글과 사진을 보관함에서 삭제하시겠습니까?')) return;
+    try {
+      await api.deletePost(postId);
+      await this.refreshSavedPosts();
+      alert('🗑️ 보관된 글이 삭제되었습니다.');
+    } catch (err) {
+      alert('삭제 오류: ' + err.message);
     }
   }
 

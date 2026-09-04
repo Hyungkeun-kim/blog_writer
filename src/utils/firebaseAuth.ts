@@ -55,21 +55,27 @@ function base64UrlDecode(str: string): Uint8Array {
 }
 
 export async function verifyAuthToken(request: Request, env: Env): Promise<AuthResult> {
+  let token = ""
   const authHeader = request.headers.get("Authorization")
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return {
-      valid: false,
-      status: 401,
-      error: "인증 헤더(Authorization: Bearer <토큰>)가 누락되었습니다.",
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.slice(7).trim()
+  } else {
+    try {
+      const url = new URL(request.url)
+      const qToken = url.searchParams.get("token")
+      if (qToken) {
+        token = qToken.trim()
+      }
+    } catch {
+      // Ignore malformed URL
     }
   }
 
-  const token = authHeader.slice(7).trim()
   if (!token) {
     return {
       valid: false,
       status: 401,
-      error: "토큰이 비어 있습니다.",
+      error: "인증 헤더(Authorization: Bearer <토큰>)가 누락되었습니다.",
     }
   }
 

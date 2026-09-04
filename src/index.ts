@@ -134,7 +134,7 @@ export default {
         return jsonResponse({ posts: posts.results })
       }
 
-      // 4-1. GET /api/posts/:id/content - Stream Markdown Content from R2
+      // 4-1. GET /api/posts/:id/content - Stream Markdown Content from R2 and Photo URLs
       const postContentMatch = pathname.match(/^\/api\/posts\/([^/]+)\/content$/)
       if (postContentMatch && request.method === "GET") {
         const postId = postContentMatch[1]
@@ -146,15 +146,88 @@ export default {
           return jsonResponse({ error: "게시글을 찾을 수 없습니다." }, 404)
         }
 
+        // List photos for this post
+        const photoPrefix = `users/${userId}/posts/${postId}/photos/`
+        const photoList = await env.R2_BUCKET.list({ prefix: photoPrefix })
+        const photos = (photoList.objects || [])
+          .map((obj) => {
+            const match = obj.key.match(/photo_(\d+)\.webp$/)
+            return {
+              slotId: match ? parseInt(match[1], 10) : 0,
+              url: `/api/posts/${postId}/photos/${match ? match[1] : 0}`,
+            }
+          })
+          .sort((a, b) => a.slotId - b.slotId)
+          .map((p) => p.url)
+
+        let mdText = post.content || ""
         if (post.r2_markdown_key) {
           const r2Obj = await env.R2_BUCKET.get(post.r2_markdown_key)
           if (r2Obj) {
-            const mdText = await r2Obj.text()
-            return jsonResponse({ id: postId, title: post.title, content: mdText })
+            mdText = await r2Obj.text()
           }
         }
 
-        return jsonResponse({ id: postId, title: post.title, content: post.content || "" })
+        return jsonResponse({
+          id: postId,
+          title: post.title,
+          content: mdText,
+          photos,
+        })
+      }
+
+      // 4-2. GET /api/posts/:id/photos/:slotId - Stream Published Post Photo from R2
+      const postPhotoMatch = pathname.match(/^\/api\/posts\/([^/]+)\/photos\/(\d+)$/)
+      if (postPhotoMatch && request.method === "GET") {
+        const postId = postPhotoMatch[1]
+        const slotId = postPhotoMatch[2]
+        const post = await env.DB.prepare("SELECT id FROM posts WHERE id = ? AND user_id = ?")
+          .bind(postId, userId)
+          .first<{ id: string }>()
+
+        if (!post) {
+          return jsonResponse({ error: "게시글을 찾을 수 없습니다." }, 404)
+        }
+
+        const photoKey = `users/${userId}/posts/${postId}/photos/photo_${slotId}.webp`
+        const r2Obj = await env.R2_BUCKET.get(photoKey)
+        if (!r2Obj) {
+          return jsonResponse({ error: "사진을 찾을 수 없습니다." }, 404)
+        }
+
+        return new Response(r2Obj.body, {
+          status: 200,
+          headers: {
+            "content-type": "image/webp",
+            "cache-control": "private, max-age=86400",
+            "access-control-allow-origin": "*",
+          },
+        })
+      }
+
+      // 4-3. DELETE /api/posts/:id - Delete Published Post (Markdown & Photos)
+      const postDeleteMatch = pathname.match(/^\/api\/posts\/([^/]+)$/)
+      if (postDeleteMatch && (request.method === "DELETE" || request.method === "POST")) {
+        const postId = postDeleteMatch[1]
+        const post = await env.DB.prepare("SELECT id, r2_markdown_key FROM posts WHERE id = ? AND user_id = ?")
+          .bind(postId, userId)
+          .first<{ id: string; r2_markdown_key: string }>()
+
+        if (post) {
+          if (post.r2_markdown_key) {
+            await env.R2_BUCKET.delete(post.r2_markdown_key)
+          }
+          const postPrefix = `users/${userId}/posts/${postId}/`
+          const listed = await env.R2_BUCKET.list({ prefix: postPrefix })
+          for (const obj of listed.objects || []) {
+            await env.R2_BUCKET.delete(obj.key)
+          }
+          await env.DB.prepare("DELETE FROM posts WHERE id = ? AND user_id = ?")
+            .bind(postId, userId)
+            .run()
+        }
+
+        return jsonResponse({ success: true, id: postId }, 200)
       }
 
       // 5. POST /api/styles/learn - Learn Style from Previous Posts

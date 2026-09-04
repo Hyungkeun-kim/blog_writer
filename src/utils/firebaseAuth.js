@@ -30,20 +30,26 @@ function base64UrlDecode(str) {
   return bytes;
 }
 async function verifyAuthToken(request, env) {
+  let token = "";
   const authHeader = request.headers.get("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return {
-      valid: false,
-      status: 401,
-      error: "\uC778\uC99D \uD5E4\uB354(Authorization: Bearer <\uD1A0\uD070>)\uAC00 \uB204\uB77D\uB418\uC5C8\uC2B5\uB2C8\uB2E4."
-    };
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.slice(7).trim();
+  } else {
+    try {
+      const url = new URL(request.url);
+      const qToken = url.searchParams.get("token");
+      if (qToken) {
+        token = qToken.trim();
+      }
+    } catch {
+      // Ignore malformed URL
+    }
   }
-  const token = authHeader.slice(7).trim();
   if (!token) {
     return {
       valid: false,
       status: 401,
-      error: "\uD1A0\uD070\uC774 \uBE44\uC5B4 \uC788\uC2B5\uB2C8\uB2E4."
+      error: "\uC778\uC99D \uD5E4\uB354(Authorization: Bearer <\uD1A0\uD070>)\uAC00 \uB204\uB77D\uB418\uC5C8\uC2B5\uB2C8\uB2E4."
     };
   }
   const internalSecret = env.INTERNAL_SERVICE_TOKEN || env.APP_ACCESS_TOKEN;
