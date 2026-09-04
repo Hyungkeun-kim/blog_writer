@@ -152,6 +152,10 @@ export class StudioApp {
       files = Array.from(input);
     }
 
+    if (files.length === 0) {
+      return;
+    }
+
     const validImages = files.filter((f) => {
       if (!f) return false;
       if (f.type && f.type.startsWith('image/')) return true;
@@ -160,7 +164,7 @@ export class StudioApp {
     });
 
     if (validImages.length === 0) {
-      alert('유효한 사진 파일(JPG, PNG, WebP)을 선택해주세요.');
+      alert('선택하신 파일 중 유효한 사진 파일(JPG, PNG, WebP)이 없습니다.');
       return;
     }
 
